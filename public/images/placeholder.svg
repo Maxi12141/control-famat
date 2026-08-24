@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400" role="img" aria-label="Sin foto">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f7eef3"/>
+      <stop offset="100%" stop-color="#edd5e3"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="400" fill="url(#bg)"/>
+  <rect x="28" y="28" width="344" height="344" rx="24" fill="none" stroke="#d6177e" stroke-opacity="0.18" stroke-width="2"/>
+  <circle cx="200" cy="150" r="42" fill="#d6177e" fill-opacity="0.12"/>
+  <path d="M128 268c18-36 52-54 72-54s54 18 72 54" fill="none" stroke="#d6177e" stroke-opacity="0.35" stroke-width="8" stroke-linecap="round"/>
+  <rect x="155" y="118" width="90" height="64" rx="10" fill="none" stroke="#d6177e" stroke-opacity="0.45" stroke-width="6"/>
+  <circle cx="186" cy="140" r="8" fill="#d6177e" fill-opacity="0.35"/>
+  <path d="M168 166l18-16 14 12 20-22 22 26" fill="none" stroke="#d6177e" stroke-opacity="0.45" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="200" y="318" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="18" fill="#8a3a66" fill-opacity="0.7">Famat</text>
+  <text x="200" y="342" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="13" fill="#8a3a66" fill-opacity="0.55">Foto pr�xima</text>
+</svg>
