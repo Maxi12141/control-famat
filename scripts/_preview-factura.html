@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Preview factura renglones</title>
+  <style>
+    :root{color-scheme:only light}
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{background:#ddd;color:#000}
+    @page{size:A4;margin:8mm}
+    .fb{width:190mm;margin:8mm auto;border:1.6px solid #000;background:#fff;color:#000;display:flex;flex-direction:column;min-height:277mm}
+    .head{display:grid;grid-template-columns:1fr 78px 1fr;min-height:42mm;border-bottom:1.6px solid #111}
+    .emi{padding:8px 10px 8px 12px;font-size:11px;font-family:Arial,sans-serif}
+    .emi .nom{font-size:18px;font-weight:800;margin-bottom:4px}
+    .letra{border-left:1.6px solid #111;border-right:1.6px solid #111;display:flex;flex-direction:column;align-items:center;padding:8px 4px 0;font-family:Arial,sans-serif}
+    .b{width:52px;height:48px;border:2.2px solid #111;font-size:38px;font-weight:800;display:grid;place-items:center;line-height:1}
+    .doc{padding:8px 12px;font-family:Arial,sans-serif;text-align:right}
+    .doc .tit{font-size:22px;font-weight:800;letter-spacing:.06em}
+    .cli{padding:8px 12px 10px;border-bottom:1.6px solid #111;font-size:12px;font-family:Arial,sans-serif}
+    .cuerpo{flex:1;display:flex;min-height:118mm}
+    .lado{writing-mode:vertical-rl;transform:rotate(180deg);font-size:8px;font-weight:700;letter-spacing:.12em;padding:10px 3px;border-right:1.4px solid #111;display:grid;place-items:center;white-space:nowrap;font-family:Arial,sans-serif}
+    .tabla-box{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
+    table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:11px;background:#fff;flex:0 0 auto;font-family:Arial,sans-serif}
+    th{background:#eee8e0;color:#000;border-bottom:1.5px solid #000;border-right:1px solid #111;padding:5px 6px;font-size:10.5px;font-weight:800;letter-spacing:.04em;text-align:center}
+    td{border-right:1px solid #c9c3ba;border-bottom:1px dotted #c9c3ba;padding:3px 7px;vertical-align:middle;line-height:1.25}
+    th:last-child,td:last-child{border-right:0}
+    td.cant{text-align:center}
+    td.num,th.num{text-align:right;white-space:nowrap}
+    col.cant{width:14%}
+    col.desc{width:50%}
+    col.pu,col.imp{width:18%}
+    .resto{flex:1 1 auto;min-height:24px;position:relative;background:repeating-linear-gradient(to bottom,#fff 0 17px,#d8d3cb 17px 18px)}
+    .resto:before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(#c9c3ba,#c9c3ba) 14% 0/1px 100% no-repeat,linear-gradient(#c9c3ba,#c9c3ba) 64% 0/1px 100% no-repeat,linear-gradient(#c9c3ba,#c9c3ba) 82% 0/1px 100% no-repeat}
+    .pie{border-top:1.6px solid #111;padding:8px 12px 10px;font-family:Arial,sans-serif}
+    .total{border:1.6px solid #111;display:flex;align-items:center;justify-content:space-between;padding:8px 10px;font-weight:800;margin-top:8px}
+  </style>
+</head>
+<body>
+  <div class="fb">
+    <div class="head">
+      <div class="emi"><div class="nom">Famat</div><p>IVA Responsable Inscripto</p></div>
+      <div class="letra"><div class="b">B</div></div>
+      <div class="doc"><div class="tit">FACTURA</div></div>
+    </div>
+    <div class="cli">Señor/es: Cliente de prueba</div>
+    <div class="cuerpo">
+      <div class="lado">ORIGINAL BLANCO · DUPLICADO COLOR</div>
+      <div class="tabla-box">
+        <table>
+          <colgroup><col class="cant"><col class="desc"><col class="pu"><col class="imp"></colgroup>
+          <thead>
+            <tr><th>CANT.</th><th>DESCRIPCIÓN</th><th class="num">P. UNITARIO</th><th class="num">IMPORTE</th></tr>
+          </thead>
+          <tbody>
+            <tr class="item"><td class="cant">20</td><td>L041 · Jabon liquido skip premiun (L)</td><td class="num">0,00</td><td class="num">0,00</td></tr>
+            <tr class="item"><td class="cant">10</td><td>L091 · Suavizante Downy Doble Perfume (L)</td><td class="num">0,00</td><td class="num">0,00</td></tr>
+            <tr class="item"><td class="cant">5</td><td>L068 · Perfume P/ropa al alcohol - Coco-vainilla (L)</td><td class="num">0,00</td><td class="num">0,00</td></tr>
+            <tr class="item"><td class="cant">5</td><td>L068 · Perfume P/ropa al alcohol - Uva (L)</td><td class="num">0,00</td><td class="num">0,00</td></tr>
+            <tr class="item"><td class="cant">10</td><td>L022 · Desengrasante cocina (L)</td><td class="num">0,00</td><td class="num">0,00</td></tr>
+          </tbody>
+        </table>
+        <div class="resto"></div>
+      </div>
+    </div>
+    <div class="pie"><div class="total"><span>TOTAL $</span><b>0,00</b></div></div>
+  </div>
+</body>
+</html>

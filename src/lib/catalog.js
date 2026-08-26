@@ -326,8 +326,11 @@ export function listarProductos() {
 }
 
 export function buscarProductoPorNombre(nombre) {
-  const key = String(nombre || '').split(' - ')[0].trim().toLowerCase()
-  return listarProductos().find((item) => item.nombre.toLowerCase() === key) || null
+  const crudo = String(nombre || '').split(' - ')[0].trim()
+  if (!crudo) return null
+  const key = crudo.toLowerCase()
+  const slug = slugify(crudo)
+  return listarProductos().find((item) => item.nombre.toLowerCase() === key || item.slug === slug) || null
 }
 
 export function buscarProductos(query, productos) {

@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { IconClose, IconInvoice } from './icons.jsx'
 import {
   IVA_CLIENTE,
   armarComprobante,
-  descargarHtml,
+  descargarPdf,
   esCuentaCorriente,
   etiquetaTipoDoc,
   formatoNumero,
@@ -16,7 +16,8 @@ import {
   registrarEmision,
   totalLineas,
 } from '../lib/comprobantes.js'
-import { dinero, fechaHumana, hoyISO } from '../lib/format.js'
+import { dinero, etiquetaTipo, fechaHumana, hoyISO } from '../lib/format.js'
+import { usePanel } from '../lib/panel.jsx'
 import { registrarCargo } from '../lib/cuentas.js'
 
 function pedidoLabel(pedido) {
@@ -26,6 +27,7 @@ function pedidoLabel(pedido) {
 }
 
 export default function ComprobanteScreen({ pedidos, pedidoInicial, onCerrar }) {
+  const { verPrecios } = usePanel()
   const [tipo, setTipo] = useState('factura')
   const [pedidoId, setPedidoId] = useState(() => (pedidoInicial ? String(pedidoInicial.id) : ''))
   const [cliente, setCliente] = useState('')
@@ -43,6 +45,8 @@ export default function ComprobanteScreen({ pedidos, pedidoInicial, onCerrar }) 
   const [mostrarEmpresa, setMostrarEmpresa] = useState(false)
   const [aviso, setAviso] = useState('')
   const [error, setError] = useState('')
+  const [ocupado, setOcupado] = useState('')
+  const pedidoCargado = useRef('')
 
   const pedido = useMemo(
     () => pedidos.find((item) => String(item.id) === String(pedidoId)) || null,
@@ -50,20 +54,21 @@ export default function ComprobanteScreen({ pedidos, pedidoInicial, onCerrar }) 
   )
 
   useEffect(() => {
-    if (!pedido) {
-      if (!pedidoId) {
-        setCliente('')
-        setTelefono('')
-        setDomicilio('')
-        setLocalidad('')
-        setIvaCliente('cf')
-        setCuitCliente('')
-        setPago('')
-        setNotas('')
-        setLineas([])
-      }
+    if (!pedidoId) {
+      pedidoCargado.current = ''
+      setCliente('')
+      setTelefono('')
+      setDomicilio('')
+      setLocalidad('')
+      setIvaCliente('cf')
+      setCuitCliente('')
+      setPago('')
+      setNotas('')
+      setLineas([])
       return
     }
+    if (!pedido || pedidoCargado.current === pedidoId) return
+    pedidoCargado.current = pedidoId
     setCliente(pedido.cliente || '')
     setTelefono(pedido.telefono || '')
     setPago(pedido.metodoPago || '')
@@ -96,18 +101,20 @@ export default function ComprobanteScreen({ pedidos, pedidoInicial, onCerrar }) 
       cuitCliente,
     })
 
-  const emitir = (accion) => {
+  const emitir = async (accion) => {
+    if (ocupado) return
     setError('')
     setAviso('')
     if (!lineas.length) {
-      setError('Elegí un pedido con ítems, o cargá al menos un producto.')
+      setError('Elegí un pedido con objetos, o cargá al menos un producto.')
       return
     }
     guardarEmpresa(empresa)
     const doc = docActual()
+    setOcupado(accion)
     try {
       if (accion === 'imprimir') imprimirHtml(doc)
-      else descargarHtml(doc)
+      else await descargarPdf(doc)
       registrarEmision(doc)
       if (tipo === 'factura') {
         registrarCargo({
@@ -118,16 +125,36 @@ export default function ComprobanteScreen({ pedidos, pedidoInicial, onCerrar }) 
           modo: cobro,
           fecha,
           notas: doc.notas,
+          items: lineas.map((item) => ({
+            slug: item.slug,
+            nombre: item.nombre,
+            codigo: item.codigo,
+            cantidad: item.cantidad,
+            precio: item.precio,
+            tipo: item.tipo,
+          })),
         })
       }
       setAviso(
         cobro === 'fiado'
-          ? `${etiquetaTipoDoc(tipo)} ${doc.numero} lista. Quedó anotado que ${doc.cliente || 'el cliente'} debe ${dinero(doc.total)}.`
-          : `${etiquetaTipoDoc(tipo)} ${doc.numero} lista. Quedó anotado que pagó ${dinero(doc.total)}.`,
+          ? `${etiquetaTipoDoc(tipo)} ${doc.numero} lista. Quedó anotado que ${doc.cliente || 'el cliente'} debe${verPrecios ? ` ${dinero(doc.total)}` : ''}.`
+          : `${etiquetaTipoDoc(tipo)} ${doc.numero} lista. Quedó anotado que pagó${verPrecios ? ` ${dinero(doc.total)}` : ''}.`,
       )
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo generar el documento.')
+    } finally {
+      setOcupado('')
     }
+  }
+
+  const quitarObjeto = (id) => {
+    setLineas((lista) => lista.filter((item) => item.id !== id))
+  }
+
+  const etiquetaPrecio = (item) => {
+    if (item.tipo === 'liquido' || item.unidad === 'L') return 'por litro'
+    if (item.tipo === 'granel' || item.unidad === 'kg') return 'por kilo'
+    return 'por unidad'
   }
 
   const setLinea = (id, campo, valor) => {
@@ -247,16 +274,19 @@ export default function ComprobanteScreen({ pedidos, pedidoInicial, onCerrar }) 
       </article>
 
       <article className="panel">
-        <h2>Ítems</h2>
+        <h2>Objetos</h2>
         {lineas.length === 0 ? (
-          <p className="vacio">Elegí un pedido para cargar los productos.</p>
+          <p className="vacio">Elegí un pedido para cargar los productos. Si sacás todos, la factura queda vacía.</p>
         ) : (
           <ul className="comp__items">
             {lineas.map((item) => (
               <li key={item.id}>
                 <div>
                   <strong>{item.nombre}</strong>
-                  <p>{item.codigo ? `${item.codigo} · ` : ''}{dinero(item.precio)} por litro</p>
+                  <p>
+                    {[item.codigo, item.tipo ? etiquetaTipo(item.tipo) : ''].filter(Boolean).join(' · ')}
+                    {verPrecios ? ` · ${dinero(item.precio)} ${etiquetaPrecio(item)}` : ''}
+                  </p>
                 </div>
                 <label>
                   Cant.
@@ -269,25 +299,32 @@ export default function ComprobanteScreen({ pedidos, pedidoInicial, onCerrar }) 
                     onChange={(e) => setLinea(item.id, 'cantidad', e.target.value)}
                   />
                 </label>
-                <label>
-                  Precio unitario (por litros)
-                  <input
-                    className="precio-input"
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={item.precio || ''}
-                    onChange={(e) => setLinea(item.id, 'precio', e.target.value)}
-                  />
-                </label>
-                <strong>{dinero(item.precio * item.cantidad)}</strong>
+                {verPrecios ? (
+                  <>
+                    <label>
+                      Precio unitario ({etiquetaPrecio(item)})
+                      <input
+                        className="precio-input"
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={item.precio || ''}
+                        onChange={(e) => setLinea(item.id, 'precio', e.target.value)}
+                      />
+                    </label>
+                    <strong>{dinero(item.precio * item.cantidad)}</strong>
+                  </>
+                ) : null}
+                <button type="button" className="comp__sacar" aria-label="Sacar objeto" onClick={() => quitarObjeto(item.id)}>
+                  ×
+                </button>
               </li>
             ))}
           </ul>
         )}
-        {lineas.length > 0 ? <p className="total-caja">Total importe: {dinero(total)}</p> : null}
-        {sinPrecio ? (
-          <p className="pedido-error">Hay ítems sin precio. Completalos acá o cargalos en Productos.</p>
+        {lineas.length > 0 && verPrecios ? <p className="total-caja">Total importe: {dinero(total)}</p> : null}
+        {sinPrecio && verPrecios ? (
+          <p className="pedido-error">Hay objetos sin precio. Completalos acá o cargalos en Productos.</p>
         ) : null}
       </article>
 
@@ -382,7 +419,7 @@ export default function ComprobanteScreen({ pedidos, pedidoInicial, onCerrar }) 
                   </li>
                 ))}
               </ul>
-              {lineas.length > 6 ? <p className="vacio">+ {lineas.length - 6} ítems más</p> : null}
+              {lineas.length > 6 ? <p className="vacio">+ {lineas.length - 6} objetos más</p> : null}
               <p className="comp__hoja-total">TOTAL $ {dinero(total)}</p>
             </>
           ) : (
@@ -407,7 +444,7 @@ export default function ComprobanteScreen({ pedidos, pedidoInicial, onCerrar }) 
                   </li>
                 ))}
               </ul>
-              {lineas.length > 6 ? <p className="vacio">+ {lineas.length - 6} ítems más</p> : null}
+              {lineas.length > 6 ? <p className="vacio">+ {lineas.length - 6} objetos más</p> : null}
               <p className="comp__hoja-total">TOTAL $ {dinero(total)}</p>
             </>
           )}
@@ -418,11 +455,11 @@ export default function ComprobanteScreen({ pedidos, pedidoInicial, onCerrar }) 
       {aviso ? <p className="ok-msg">{aviso}</p> : null}
 
       <div className="comp__acciones">
-        <button type="button" className="dash-btn dash-btn--navy" onClick={() => emitir('imprimir')}>
+        <button type="button" className="dash-btn dash-btn--navy" disabled={Boolean(ocupado)} onClick={() => emitir('imprimir')}>
           Imprimir
         </button>
-        <button type="button" className="dash-btn dash-btn--plus-wide" onClick={() => emitir('descargar')}>
-          Descargar
+        <button type="button" className="dash-btn dash-btn--plus-wide" disabled={Boolean(ocupado)} onClick={() => emitir('descargar')}>
+          {ocupado === 'descargar' ? 'Generando PDF…' : 'Descargar'}
         </button>
       </div>
     </div>

@@ -1,5 +1,5 @@
 import { slugify } from './format.js'
-import { buscarProductoPorNombre } from './catalog.js'
+import { buscarProductoPorNombre, listarProductos } from './catalog.js'
 import { CLIENTE_CATALOGO, headersSupabase, SUPABASE_URL } from './supabase.js'
 import { leerJSON } from './storage.js'
 
@@ -181,6 +181,13 @@ export function slugDesdeNombrePedido(nombre) {
 }
 
 export function productoDeItemPedido(item) {
+  const productos = listarProductos()
+  if (item?.slug) {
+    const porSlug = productos.find((prod) => prod.slug === item.slug)
+    if (porSlug) return porSlug.slug
+  }
   const encontrado = buscarProductoPorNombre(item.nombre)
-  return item.slug || encontrado?.slug || slugDesdeNombrePedido(item.nombre)
+  if (encontrado) return encontrado.slug
+  const slug = slugDesdeNombrePedido(item.nombre)
+  return productos.find((prod) => prod.slug === slug)?.slug || slug
 }

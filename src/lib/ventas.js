@@ -1,6 +1,6 @@
 import { hoyISO } from './format.js'
 import { itemsPedido, cantidadItem, esPedidoCatalogo, productoDeItemPedido } from './pedidos.js'
-import { precioDe } from './precios.js'
+import { precioCobroDe, precioDe } from './precios.js'
 import { ajustarStock } from './stock.js'
 import { guardarJSON, leerJSON } from './storage.js'
 
@@ -23,7 +23,7 @@ export function leerPerdidas() {
 }
 
 function registrarVenta(venta) {
-  const items = venta.items.map((item) => ({ ...item, precio: item.precio || precioDe(item.slug).venta }))
+    const items = venta.items.map((item) => ({ ...item, precio: item.precio || precioCobroDe(item.slug) }))
   const total = venta.total ?? items.reduce((acc, item) => acc + item.precio * item.cantidad, 0)
   const row = {
     id: `v_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -141,7 +141,7 @@ function idsAplicados() {
   return new Set(Array.isArray(raw) ? raw.map(String) : [])
 }
 
-export function marcarVentaPagada({ pedidoId, cliente }) {
+export function marcarVentaPagada({ pedidoId, cliente, fecha }) {
   const ventas = leerVentas()
   let cambio = false
   const next = ventas.map((venta) => {
@@ -149,7 +149,7 @@ export function marcarVentaPagada({ pedidoId, cliente }) {
     const mismoCliente = cliente && !venta.pedidoId && venta.pagado === false && String(venta.cliente || '').trim() === String(cliente).trim()
     if (!mismoPedido && !mismoCliente) return venta
     cambio = true
-    return { ...venta, pagado: true }
+    return { ...venta, pagado: true, fecha: fecha || hoyISO() }
   })
   if (cambio) guardarJSON(KEY_VENTAS, next)
   return cambio
@@ -170,11 +170,13 @@ export function aplicarPedidosAlStock(pedidos) {
     const items = itemsPedido(pedido)
       .map((item) => {
         const slug = productoDeItemPedido(item)
+        const cantidad = cantidadItem(item)
         return {
           slug,
           nombre: item.nombre,
-          cantidad: cantidadItem(item) || 1,
-          precio: precioDe(slug).venta,
+          cantidad: cantidad > 0 ? cantidad : 0,
+          precio: precioCobroDe(slug),
+          tipo: item.tipo,
         }
       })
       .filter((item) => item.slug && item.cantidad > 0)

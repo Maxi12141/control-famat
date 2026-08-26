@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import ComprobanteScreen from './components/ComprobanteScreen.jsx'
 import CuentasScreen from './components/CuentasScreen.jsx'
 import {
@@ -38,7 +38,8 @@ function onFotoError(event, slug) {
   }
   img.src = '/images/placeholder.svg'
 }
-import { dinero, etiquetaTipo, hoyISO, MESES, nombreLinea } from './lib/format.js'
+import { PanelContext, usePanel } from './lib/panel.jsx'
+import { dinero, etiquetaTipo, fechaHumana, hoyISO, MESES, nombreLinea, textoMonto } from './lib/format.js'
 import {
   cargarPedidos,
   cantidadItem,
@@ -54,8 +55,8 @@ import {
   ordenarPedidos,
   unidadItem,
 } from './lib/pedidos.js'
-import { aumentarPrecios, guardarPrecio, guardarPreciosLote, parsearListadoPrecios, precioDe } from './lib/precios.js'
-import { ajustarStock, conteoStock, esAlerta, sinStock, stockDe } from './lib/stock.js'
+import { aumentarPrecios, aplicarPorcentajeACobro, cobroDesdeVenta, guardarPrecio, guardarPreciosLote, parsearCodigos, parsearListadoPrecios, precioCobroDe, precioDe } from './lib/precios.js'
+import { ajustarStock, conteoStock, esAlerta, etiquetaUnidad, formatoStock, pasoStock, sinStock, stockDe, UMBRAL, unidadDeTipo } from './lib/stock.js'
 import {
   aplicarPedidosAlStock,
   guardarVentaLocal,
@@ -70,7 +71,9 @@ import {
 import {
   cargoDePedido,
   clientesConDeuda,
+  itemsDePedido,
   registrarCargo,
+  registrarCobro,
   resumenDe,
   totalDeuda,
   totalPedido,
@@ -97,6 +100,7 @@ const TABS = [
   { id: 'stock', label: 'Stock', icon: IconStock },
 ]
 
+const NAV_SOLO_JEFE = new Set(['importes', 'perdidas'])
 const NAV_MORE = NAV.filter((item) => ['productos', 'cuentas', 'importes', 'perdidas', 'ajustes'].includes(item.id))
 
 const FILTROS_TIPO = [
@@ -107,6 +111,7 @@ const FILTROS_TIPO = [
 ]
 
 function InicioView({ pedidos, pendientes, ultimos, productos, alerta, deuda, deudores, onCuentas }) {
+  const { verPrecios } = usePanel()
   return (
     <>
       <h1>Panel Principal</h1>
@@ -148,17 +153,23 @@ function InicioView({ pedidos, pendientes, ultimos, productos, alerta, deuda, de
             ))
           )}
         </article>
-        <article className="panel">
+        <article className="panel panel-centro">
           <h2>Hoy</h2>
-          <p>
-            Ganancia acumulada: <strong>{dinero(totalVentas())}</strong>
-          </p>
-          <p>
-            Pérdidas por reposición: <strong>{dinero(totalPerdidas())}</strong>
-          </p>
-          <p>
-            Clientes que deben: <strong>{dinero(deuda)}</strong>
-          </p>
+          {verPrecios ? (
+            <>
+              <p>
+                Ganancia acumulada: <strong>{dinero(totalVentas())}</strong>
+              </p>
+              <p>
+                Pérdidas por reposición: <strong>{dinero(totalPerdidas())}</strong>
+              </p>
+              <p>
+                Clientes que deben: <strong>{dinero(deuda)}</strong>
+              </p>
+            </>
+          ) : (
+            <p className="vacio">Los importes los ve solo el jefe.</p>
+          )}
           {deudores.length > 0 ? (
             <button type="button" className="dash-btn dash-btn--navy" onClick={onCuentas}>
               Ver {deudores.length} cuenta{deudores.length === 1 ? '' : 's'} con fiado
@@ -174,6 +185,7 @@ function InicioView({ pedidos, pendientes, ultimos, productos, alerta, deuda, de
 
 function PedidoCard({ pedido, abierto, guardando, onToggle, onEstado, onDocumento, onCuentas }) {
   const [sinTel, setSinTel] = useState(false)
+  const { verPrecios } = usePanel()
   const estado = estadoCanonico(pedido.estado)
   const items = itemsPedido(pedido)
   const wa = linkWhatsApp(pedido)
@@ -219,16 +231,16 @@ function PedidoCard({ pedido, abierto, guardando, onToggle, onEstado, onDocument
               return (
                 <p className={`cuenta-estado ${cargo.modo === 'fiado' && !pagoFiado ? 'is-deuda' : 'is-ok'}`}>
                   {cargo.modo === 'pagado'
-                    ? `Pagó bien ${dinero(cargo.total)}`
+                    ? (verPrecios ? `Pagó bien ${dinero(cargo.total)}` : 'Pagó bien')
                     : pagoFiado
-                      ? `Se llevó fiado y después pagó ${dinero(cargo.total)}`
-                      : `Fiado: todavía debe ${dinero(debe)}`}
+                      ? (verPrecios ? `Se llevó fiado y después pagó ${dinero(cargo.total)}` : 'Se llevó fiado y después pagó')
+                      : (verPrecios ? `Fiado: todavía debe ${dinero(debe)}` : 'Fiado: todavía debe')}
                 </p>
               )
             }
             return (
               <div className="cuenta-acciones">
-                <p>Total según precio: <strong>{dinero(total)}</strong></p>
+                {verPrecios ? <p>Total según precio: <strong>{dinero(total)}</strong></p> : null}
                 <div className="pedido-estados">
                   <button
                     type="button"
@@ -241,8 +253,9 @@ function PedidoCard({ pedido, abierto, guardando, onToggle, onEstado, onDocument
                         total,
                         modo: 'pagado',
                         fecha: pedido.entrega,
+                        items: itemsDePedido(pedido),
                       })
-                      marcarVentaPagada({ pedidoId: pedido.id, cliente: pedido.cliente })
+                      marcarVentaPagada({ pedidoId: pedido.id, cliente: pedido.cliente, fecha: hoyISO() })
                       onCuentas?.()
                     }}
                   >
@@ -259,6 +272,7 @@ function PedidoCard({ pedido, abierto, guardando, onToggle, onEstado, onDocument
                         total,
                         modo: 'fiado',
                         fecha: pedido.entrega,
+                        items: itemsDePedido(pedido),
                       })
                       onCuentas?.()
                     }}
@@ -350,7 +364,7 @@ function PedidosView({ pedidos, onPedidos, onCuentas }) {
   return (
     <>
       <h1>Pedidos</h1>
-      <p className="dash-sub">Activos primero (pendiente, en preparación y listo). Los entregados quedan archivados.</p>
+      <p className="dash-sub">Activos primero. Lo que pidan en pedidosfamat se descuenta del stock (líquidos en litros, granel en kilos).</p>
       <div className="pedido-toolbar">
         <button type="button" className="dash-btn dash-btn--navy" onClick={() => setDocumento({})}>
           Factura o remito
@@ -417,7 +431,7 @@ function StockKpis({ conteo }) {
   return (
     <>
       <h1>Control de Stock</h1>
-      <p className="dash-sub">Monitoreo y ajuste de inventario</p>
+      <p className="dash-sub">Líquidos en litros, granel en kilos y el resto en unidades. Lo que sale de la web se descuenta solo.</p>
       <div className="stock-kpis">
         <article className="stock-kpi">
           <strong className="is-ok">{conteo.normal}</strong>
@@ -437,9 +451,21 @@ function StockKpis({ conteo }) {
 }
 
 function StockView({ items, total, busqueda, onBusqueda, onCambio, conteo }) {
+  const [filtroTipo, setFiltroTipo] = useState('')
+  const visibles = filtroTipo ? items.filter((item) => item.tipo === filtroTipo) : items
   return (
     <>
       <StockKpis conteo={conteo} />
+      <p className="dash-sub stock-minimos">
+        Alerta cuando baja de {UMBRAL.producto} u (producto), {UMBRAL.liquido} L (líquido) o {UMBRAL.granel} kg (granel).
+      </p>
+      <div className="filtro-tipos">
+        {FILTROS_TIPO.map((item) => (
+          <button key={item.id || 'todos'} type="button" className={filtroTipo === item.id ? 'is-on' : ''} onClick={() => setFiltroTipo(item.id)}>
+            {item.label}
+          </button>
+        ))}
+      </div>
       <input
         className="dash-search"
         type="search"
@@ -448,28 +474,29 @@ function StockView({ items, total, busqueda, onBusqueda, onCambio, conteo }) {
         onChange={(event) => onBusqueda(event.target.value)}
       />
       <article className="panel">
-        {items.map((item) => {
+        {visibles.map((item) => {
           const stock = stockDe(item.slug)
+          const paso = pasoStock(item.tipo)
           return (
             <div className="stock-edit" key={item.slug}>
               <img src={item.foto} alt="" onError={(event) => onFotoError(event, item.slug)} />
               <div>
                 <strong>{item.nombre}</strong>
                 <p>
-                  {item.codigo} · {item.linea}
+                  {item.codigo} · {etiquetaTipo(item.tipo)} · {etiquetaUnidad(item.tipo)}
                 </p>
               </div>
               <div className="stock-edit__meta">
-                <span className={`pill ${stock <= 0 ? 'pill--alert' : stock <= 5 ? 'pill--warn' : 'pill--ok'}`}>{stock}</span>
+                <span className={`pill ${stock <= 0 ? 'pill--alert' : esAlerta(item.slug, item.tipo) ? 'pill--warn' : 'pill--ok'}`}>{formatoStock(stock, item.tipo)}</span>
                 <div className="stock-edit__btns">
-                  <button type="button" onClick={() => { ajustarStock(item.slug, -1); onCambio() }}>−</button>
-                  <button type="button" onClick={() => { ajustarStock(item.slug, 1); onCambio() }}>+</button>
+                  <button type="button" onClick={() => { ajustarStock(item.slug, -paso); onCambio() }}>−</button>
+                  <button type="button" onClick={() => { ajustarStock(item.slug, paso); onCambio() }}>+</button>
                 </div>
               </div>
             </div>
           )
         })}
-        <p className="vacio">{total} productos</p>
+        <p className="vacio">{visibles.length} de {total}</p>
       </article>
     </>
   )
@@ -482,6 +509,7 @@ function ProductoPrecioCard({
   precio,
   mostrarFoto = false,
   mostrarBorrar = false,
+  verPrecios = true,
   onCodigo,
   onBlurPrecio,
   onKeyPrecio,
@@ -510,9 +538,10 @@ function ProductoPrecioCard({
           </button>
         ) : null}
       </div>
+      {verPrecios ? (
       <div className="prod-card__precios">
         <label>
-          Venta
+          Precio lista
           <input
             className="precio-input"
             type="number"
@@ -526,7 +555,7 @@ function ProductoPrecioCard({
           />
         </label>
         <label>
-          Cobro
+          Venta
           <input
             className="precio-input"
             type="number"
@@ -540,11 +569,13 @@ function ProductoPrecioCard({
           />
         </label>
       </div>
+      ) : null}
     </article>
   )
 }
 
 function ProductosView({ productos, onCambio }) {
+  const { esJefe, verPrecios } = usePanel()
   const [panel, setPanel] = useState(null)
   const [tipo, setTipo] = useState('producto')
   const [linea, setLinea] = useState('')
@@ -564,6 +595,8 @@ function ProductosView({ productos, onCambio }) {
   const [porcentaje, setPorcentaje] = useState('')
   const [listado, setListado] = useState('')
   const [tablaKey, setTablaKey] = useState(0)
+  const [codigoRapido, setCodigoRapido] = useState('')
+  const codigoRapidoRef = useRef(null)
 
   const volver = () => {
     setPanel(null)
@@ -658,6 +691,67 @@ function ProductosView({ productos, onCambio }) {
     }
   }
 
+  const buscarPorCodigo = (texto) => {
+    const q = String(texto || '').trim()
+    if (!q) return null
+    const hits = buscarProductos(q, productos)
+    const exactos = hits.filter((item) => item.codigo.toLowerCase() === q.toLowerCase())
+    return exactos[0] || (hits.length === 1 ? hits[0] : null)
+  }
+
+  const hitsRapidos = parsearCodigos(codigoRapido).map((codigo) => {
+    const item = buscarPorCodigo(codigo)
+    const lista = item ? precioDe(item.slug).venta : 0
+    return {
+      codigo,
+      item,
+      lista,
+      venta: lista ? cobroDesdeVenta(lista, porcentaje) : 0,
+    }
+  })
+
+  const ponerVentaPorCodigos = () => {
+    const filas = hitsRapidos.length ? hitsRapidos : parsearCodigos(codigoRapido).map((codigo) => {
+      const item = buscarPorCodigo(codigo)
+      const lista = item ? precioDe(item.slug).venta : 0
+      return { codigo, item, lista, venta: lista ? cobroDesdeVenta(lista, porcentaje) : 0 }
+    })
+    if (!filas.length) {
+      setError('Poné uno o más códigos, separados por coma o uno por renglón.')
+      return
+    }
+    const raw = String(porcentaje).trim().replace(',', '.')
+    if (raw === '' || Number.isNaN(Number(raw))) {
+      setError('Poné el porcentaje, por ejemplo 40.')
+      return
+    }
+    const pct = Number(raw)
+    const okItems = []
+    const miss = []
+    for (const fila of filas) {
+      if (!fila.item) {
+        miss.push(fila.codigo)
+        continue
+      }
+      if (!fila.lista) {
+        miss.push(`${fila.codigo} (sin precio lista)`)
+        continue
+      }
+      guardarPrecio(fila.item.slug, fila.lista, cobroDesdeVenta(fila.lista, pct))
+      okItems.push(`${fila.item.codigo} venta ${dinero(cobroDesdeVenta(fila.lista, pct))}`)
+    }
+    if (!okItems.length) {
+      setError(miss.length ? `No se pudo actualizar: ${miss.join(', ')}.` : 'Poné códigos válidos.')
+      return
+    }
+    setOk(`Venta actualizada (${pct}% sobre precio lista): ${okItems.join(' · ')}${miss.length ? ` · no coincidieron ${miss.join(', ')}` : ''}`)
+    setError('')
+    setTablaKey((v) => v + 1)
+    setCodigoRapido('')
+    onCambio()
+    window.setTimeout(() => codigoRapidoRef.current?.focus(), 0)
+  }
+
   const listaPrecios = (opts = {}) => (
     <div className="prod-cards">
       {visibles.map((item, index) => {
@@ -676,6 +770,7 @@ function ProductosView({ productos, onCambio }) {
             onKeyPrecio={onKeyPrecio}
             onBorrar={() => borrar(item)}
             cargando={cargando}
+            verPrecios={verPrecios}
           />
         )
       })}
@@ -713,8 +808,12 @@ function ProductosView({ productos, onCambio }) {
               </select>
             </label>
             <label>O nueva línea<input value={lineaNueva} onChange={(e) => setLineaNueva(e.target.value)} placeholder="Si no está en la lista" /></label>
-            <label>Precio venta<input type="number" min="0" value={venta} onChange={(e) => setVenta(e.target.value)} /></label>
-            <label>Precio cobro<input type="number" min="0" value={cobro} onChange={(e) => setCobro(e.target.value)} /></label>
+            {verPrecios ? (
+              <>
+                <label>Precio lista<input type="number" min="0" value={venta} onChange={(e) => setVenta(e.target.value)} /></label>
+                <label>Venta<input type="number" min="0" value={cobro} onChange={(e) => setCobro(e.target.value)} /></label>
+              </>
+            ) : null}
             <label>Imagen<input type="file" accept="image/*" onChange={(e) => leerFoto(e.target.files?.[0])} /></label>
           </div>
           {foto ? <img className="form-alta__preview" src={foto} alt="" /> : null}
@@ -727,53 +826,135 @@ function ProductosView({ productos, onCambio }) {
   }
 
   if (panel === 'precios') {
+    if (!esJefe) {
+      return (
+        <>
+          <h1>Carga rápida de precios</h1>
+          <p className="vacio">Los precios los carga solo el jefe.</p>
+          <button type="button" className="prod-back" onClick={volver}>← Volver a productos</button>
+        </>
+      )
+    }
     return (
       <>
         <h1>Carga rápida de precios</h1>
-        <p className="dash-sub">Código, precio venta y precio cobro. Filtrá, aumentá un % o pegá un listado.</p>
+        <p className="dash-sub">Pegá varios códigos. El precio lista ya tiene que estar cargado: con tu % se actualiza la venta.</p>
         <button type="button" className="prod-back" onClick={volver}>← Volver a productos</button>
         {error ? <p className="gate__error">{error}</p> : null}
         {ok ? <p className="ok-msg">{ok}</p> : null}
         <article className="panel">
+          <div className="carga-codigo">
+            <label>
+              Códigos
+              <textarea
+                ref={codigoRapidoRef}
+                value={codigoRapido}
+                autoComplete="off"
+                spellCheck={false}
+                rows={3}
+                placeholder={'L001\nL012\nP001'}
+                onChange={(e) => {
+                  setCodigoRapido(e.target.value)
+                  setOk('')
+                  setError('')
+                }}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter') return
+                  if (e.shiftKey) return
+                  e.preventDefault()
+                  ponerVentaPorCodigos()
+                }}
+              />
+            </label>
+            <label>
+              Porcentaje %
+              <input
+                type="number"
+                min="0"
+                step="0.1"
+                value={porcentaje}
+                onChange={(e) => setPorcentaje(e.target.value)}
+                placeholder="40"
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter') return
+                  e.preventDefault()
+                  ponerVentaPorCodigos()
+                }}
+              />
+            </label>
+            <button type="button" className="dash-btn dash-btn--navy" onClick={ponerVentaPorCodigos}>
+              Poner en venta
+            </button>
+          </div>
+          {hitsRapidos.length ? (
+            <div className="carga-codigo__visto">
+              {hitsRapidos.map((fila) => (
+                <p key={fila.codigo}>
+                  <strong>{fila.codigo}</strong>
+                  {fila.item ? ` · ${fila.item.nombre}` : ' · no encontrado'}
+                  {fila.item ? ` · lista ${fila.lista ? dinero(fila.lista) : 'sin cargar'} · venta ${fila.lista ? dinero(fila.venta) : '—'}` : ''}
+                </p>
+              ))}
+            </div>
+          ) : (
+            <p className="vacio">Poné uno o más códigos (coma o un renglón cada uno). Se ve el precio lista y, con tu %, la venta.</p>
+          )}
           <div className="carga-rapida">
-            <label>Aumentar % a esta lista<input type="number" value={porcentaje} onChange={(e) => setPorcentaje(e.target.value)} placeholder="10" /></label>
             <button
               type="button"
               className="dash-btn dash-btn--navy"
               onClick={() => {
+                const raw = String(porcentaje).trim().replace(',', '.')
+                if (raw === '' || Number.isNaN(Number(raw))) { setError('Poné un porcentaje, por ejemplo 40.'); return }
+                const n = Number(raw)
+                const cant = aplicarPorcentajeACobro(visibles.map((item) => item.slug), n)
+                setOk(`Venta = precio lista + ${n}% en ${cant} productos de esta lista.`)
+                setError('')
+                setTablaKey((v) => v + 1)
+                onCambio()
+              }}
+            >
+              Aplicar este % a la venta de la lista
+            </button>
+            <button
+              type="button"
+              className="dash-btn"
+              onClick={() => {
                 const n = Number(String(porcentaje).replace(',', '.'))
                 if (!n) { setError('Poné un porcentaje, por ejemplo 10.'); return }
                 aumentarPrecios(visibles.map((item) => item.slug), n)
-                setOk(`Aumento del ${n}% aplicado a ${visibles.length} productos de esta lista.`)
+                setOk(`Aumento del ${n}% en precio lista y venta de ${visibles.length} productos de esta lista.`)
                 setError('')
                 setTablaKey((v) => v + 1)
+                onCambio()
               }}
             >
-              Aplicar aumento
+              Aumentar precio lista y venta
             </button>
           </div>
           <label className="listado-precios">
-            Pegar listado (codigo,venta,cobro)
-            <textarea value={listado} onChange={(e) => setListado(e.target.value)} rows={4} placeholder={'P001,2500,1800\nL012,1800,1200'} />
+            Pegar listado: un renglón por producto, solo código y precio lista
+            <textarea value={listado} onChange={(e) => setListado(e.target.value)} rows={4} placeholder={'P001,2500\nL012,1800'} />
           </label>
           <button
             type="button"
             className="dash-btn dash-btn--navy"
             onClick={() => {
               const filas = parsearListadoPrecios(listado)
-              if (!filas.length) { setError('No se leyeron filas. Usá codigo,venta,cobro.'); return }
+              if (!filas.length) { setError('No se leyeron filas. Poné codigo,precio lista. Ejemplo: L001,2500'); return }
               const lote = []
               let miss = 0
               for (const fila of filas) {
                 const match = productos.find((item) => item.codigo.toLowerCase() === fila.codigo.trim().toLowerCase())
                 if (!match) { miss += 1; continue }
-                lote.push({ slug: match.slug, venta: fila.venta, costo: fila.costo })
+                lote.push({ slug: match.slug, venta: fila.venta })
               }
               guardarPreciosLote(lote)
-              setOk(`Se actualizaron ${lote.length} precios${miss ? ` · ${miss} códigos no coincidieron` : ''}.`)
+              setOk(`Se actualizó el precio lista de ${lote.length} productos${miss ? ` · ${miss} códigos no coincidieron` : ''}. La venta se actualiza después con los códigos y el %.`)
               setError('')
               setListado('')
               setTablaKey((v) => v + 1)
+              onCambio()
             }}
           >
             Importar listado
@@ -809,19 +990,21 @@ function ProductosView({ productos, onCambio }) {
     <>
       <h1>Productos</h1>
       <p className="dash-sub">
-        {productos.length} productos · {sinPrecio} sin precio de venta. Los precios no se ven en la web de pedidos.
+        {productos.length} productos{verPrecios ? ` · ${sinPrecio} sin precio lista` : ''}. Los precios no se ven en la web de pedidos.
       </p>
       <div className="prod-tiles">
         <button type="button" className="prod-tile" onClick={() => setPanel('alta')}>
           <span className="prod-tile__kicker">Alta</span>
           <strong>Cargar producto</strong>
-          <p>Nombre, código, tipo, línea, precios e imagen.</p>
+          <p>Nombre, código, tipo, línea{verPrecios ? ', precios' : ''} e imagen.</p>
         </button>
-        <button type="button" className="prod-tile" onClick={() => setPanel('precios')}>
-          <span className="prod-tile__kicker">Precios</span>
-          <strong>Carga rápida de precios</strong>
-          <p>Código, venta y cobro. Listado, aumento % o edición en tabla.</p>
-        </button>
+        {esJefe ? (
+          <button type="button" className="prod-tile" onClick={() => setPanel('precios')}>
+            <span className="prod-tile__kicker">Precios</span>
+            <strong>Carga rápida de precios</strong>
+            <p>Varios códigos, ves el precio lista y con tu % queda la venta.</p>
+          </button>
+        ) : null}
       </div>
       <div className="filtro-tipos">
         {FILTROS_TIPO.map((item) => (
@@ -829,9 +1012,11 @@ function ProductosView({ productos, onCambio }) {
             {item.label}
           </button>
         ))}
-        <button type="button" className={soloSinPrecio ? 'is-on' : ''} onClick={() => setSoloSinPrecio((v) => !v)}>
-          Solo sin precio ({sinPrecio})
-        </button>
+        {verPrecios ? (
+          <button type="button" className={soloSinPrecio ? 'is-on' : ''} onClick={() => setSoloSinPrecio((v) => !v)}>
+            Solo sin precio ({sinPrecio})
+          </button>
+        ) : null}
       </div>
       <div className="prod-toolbar">
         <input className="dash-search" type="search" placeholder="Buscar por nombre o código…" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
@@ -857,17 +1042,18 @@ function filaFacturaVacia() {
     codigo: '',
     slug: '',
     nombre: '',
+    tipo: '',
     cantidad: '',
     precio: 0,
   }
 }
 
 function precioPorLitroDe(slug) {
-  const precios = precioDe(slug)
-  return precios.venta || precios.costo || 0
+  return precioCobroDe(slug)
 }
 
 function FactureroView({ productos, onGuardar }) {
+  const { verPrecios } = usePanel()
   const [nombre, setNombre] = useState('')
   const [apellido, setApellido] = useState('')
   const [direccion, setDireccion] = useState('')
@@ -876,7 +1062,7 @@ function FactureroView({ productos, onGuardar }) {
   const [entidad, setEntidad] = useState('')
   const [recibido, setRecibido] = useState('')
   const [cobro, setCobro] = useState('pagado')
-  const [lineas, setLineas] = useState(() => Array.from({ length: 12 }, filaFacturaVacia))
+  const [lineas, setLineas] = useState(() => Array.from({ length: 5 }, filaFacturaVacia))
   const [sugerencias, setSugerencias] = useState({ id: '', items: [] })
   const [error, setError] = useState('')
   const filasOk = lineas.filter((fila) => fila.slug && Number(fila.cantidad) > 0)
@@ -898,24 +1084,35 @@ function FactureroView({ productos, onGuardar }) {
     const prod = elegido || exactos[0] || (hits.length === 1 ? hits[0] : null)
     if (!prod) {
       setLineas((lista) => lista.map((fila) => (
-        fila.id === id ? { ...fila, codigo: texto, slug: '', nombre: '', precio: 0 } : fila
+        fila.id === id ? { ...fila, codigo: texto, slug: '', nombre: '', tipo: '', precio: 0 } : fila
       )))
       setSugerencias({ id, items: hits.slice(0, 8) })
       setError(hits.length ? '' : 'No hay un producto con ese código.')
       return
     }
     const precio = precioPorLitroDe(prod.slug)
-    setError(precio ? '' : 'Ese producto no tiene precio. Cargalo en Productos.')
+    setError(precio ? '' : (verPrecios ? 'Ese producto no tiene precio de venta. Cargalo en Productos.' : 'Ese producto no está listo. Avisale al jefe.'))
     setLineas((lista) => {
       const next = lista.map((fila) => (
         fila.id === id
-          ? { ...fila, codigo: prod.codigo, slug: prod.slug, nombre: prod.nombre, precio }
+          ? { ...fila, codigo: prod.codigo, slug: prod.slug, nombre: prod.nombre, tipo: prod.tipo, precio }
           : fila
       ))
       return next.some((fila) => !fila.slug) ? next : [...next, filaFacturaVacia()]
     })
     setSugerencias({ id: '', items: [] })
     window.setTimeout(() => document.querySelector(`[data-fact-l="${id}"]`)?.focus(), 0)
+  }
+
+  const pasarANuevaFila = (id) => {
+    setLineas((lista) => {
+      const i = lista.findIndex((fila) => fila.id === id)
+      const haySiguiente = i >= 0 && i < lista.length - 1
+      const next = haySiguiente ? lista : [...lista, filaFacturaVacia()]
+      const destino = next[i + 1] || next[next.length - 1]
+      window.setTimeout(() => document.querySelector(`[data-fact-c="${destino.id}"]`)?.focus(), 0)
+      return next
+    })
   }
 
   const setLitros = (id, valor) => {
@@ -933,7 +1130,7 @@ function FactureroView({ productos, onGuardar }) {
   return (
     <>
       <h1>Facturación</h1>
-      <p className="dash-sub">Poné el código: aparece el producto y el precio. Solo cargás los litros.</p>
+      <p className="dash-sub">{verPrecios ? 'Poné el código: aparece el producto y el precio. Cargás litros, kilos o unidades según el producto.' : 'Poné el código: aparece el producto. Cargás litros, kilos o unidades según el producto.'}</p>
       <article className="panel fact-panel">
         <div className="fact-banner">FAMAT</div>
         <p className="fact-cli-tit">DATOS DEL CLIENTE</p>
@@ -941,7 +1138,11 @@ function FactureroView({ productos, onGuardar }) {
           <label>Nombre<input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre" /></label>
           <label>Apellido<input value={apellido} onChange={(e) => setApellido(e.target.value)} placeholder="Apellido" /></label>
           <label>Dirección<input value={direccion} onChange={(e) => setDireccion(e.target.value)} /></label>
-          <label>Teléfono<input value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder="Para avisar si debe" /></label>
+          <label>
+            Teléfono
+            <input value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder="Para avisar si debe" />
+            <small>Opcional. Si se lleva fiado y no lo tenés, lo podés completar después en Cuentas.</small>
+          </label>
           <label>Fecha<input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} /></label>
           <label>Entidad<input value={entidad} onChange={(e) => setEntidad(e.target.value)} /></label>
         </div>
@@ -954,20 +1155,25 @@ function FactureroView({ productos, onGuardar }) {
                 <th>Código</th>
                 <th>Artículo(s)</th>
                 <th>Cantidad</th>
-                <th>Precio</th>
-                <th>Total</th>
+                {verPrecios ? (
+                  <>
+                    <th>Precio</th>
+                    <th>Total</th>
+                  </>
+                ) : null}
                 <th className="fact-planilla__x"> </th>
               </tr>
             </thead>
             <tbody>
               {lineas.map((fila) => (
                 <tr key={fila.id}>
-                  <td className="fact-planilla__cod">
+                  <td className={`fact-planilla__cod${sugerencias.id === fila.id && sugerencias.items.length ? ' is-sug' : ''}`}>
                     <input
                       value={fila.codigo}
                       autoComplete="off"
                       spellCheck={false}
                       placeholder="Cód."
+                      data-fact-c={fila.id}
                       aria-label="Código"
                       onChange={(e) => {
                         const v = e.target.value
@@ -985,10 +1191,10 @@ function FactureroView({ productos, onGuardar }) {
                         }, 120)
                       }}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault()
-                          aplicarCodigo(fila.id, fila.codigo)
-                        }
+                        if (e.key !== 'Enter') return
+                        e.preventDefault()
+                        const primera = sugerencias.id === fila.id ? sugerencias.items[0] : null
+                        aplicarCodigo(fila.id, primera?.codigo || fila.codigo, primera || undefined)
                       }}
                     />
                     {sugerencias.id === fila.id && sugerencias.items.length ? (
@@ -1001,8 +1207,8 @@ function FactureroView({ productos, onGuardar }) {
                             onClick={() => aplicarCodigo(fila.id, item.codigo, item)}
                           >
                             <b>{item.codigo}</b>
-                            <span>{item.nombre}</span>
-                            <em>{dinero(precioPorLitroDe(item.slug))}</em>
+                            <span title={item.nombre}>{item.nombre}</span>
+                            {verPrecios ? <em>{dinero(precioPorLitroDe(item.slug))}</em> : null}
                           </button>
                         ))}
                       </div>
@@ -1014,17 +1220,48 @@ function FactureroView({ productos, onGuardar }) {
                       className="fact-planilla__num"
                       type="number"
                       min="0"
-                      step="0.5"
+                      step={fila.tipo ? pasoStock(fila.tipo) : 0.5}
                       data-fact-l={fila.id}
-                      aria-label="Litros"
+                      aria-label={fila.tipo ? etiquetaUnidad(fila.tipo) : 'Cantidad'}
                       value={fila.cantidad}
                       disabled={!fila.slug}
-                      placeholder={fila.slug ? '0' : ' '}
+                      placeholder={fila.slug ? unidadDeTipo(fila.tipo) : ' '}
                       onChange={(e) => setLitros(fila.id, e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'Enter') return
+                        e.preventDefault()
+                        if (verPrecios) document.querySelector(`[data-fact-p="${fila.id}"]`)?.focus()
+                        else pasarANuevaFila(fila.id)
+                      }}
                     />
                   </td>
-                  <td className="fact-planilla__precio">{fila.slug ? dinero(fila.precio) : '$'}</td>
-                  <td className="fact-planilla__imp">{fila.slug && Number(fila.cantidad) ? dinero(fila.precio * Number(fila.cantidad)) : '$'}</td>
+                  {verPrecios ? (
+                    <>
+                      <td className="fact-planilla__precio">
+                        {fila.slug && verPrecios ? (
+                          <input
+                            className="fact-planilla__num"
+                            type="number"
+                            min="0"
+                            data-fact-p={fila.id}
+                            value={fila.precio || ''}
+                            onKeyDown={(e) => {
+                              if (e.key !== 'Enter') return
+                              e.preventDefault()
+                              pasarANuevaFila(fila.id)
+                            }}
+                            onChange={(e) => {
+                              const v = e.target.value
+                              setLineas((lista) => lista.map((row) => (
+                                row.id === fila.id ? { ...row, precio: v === '' ? 0 : Number(String(v).replace(',', '.')) || 0 } : row
+                              )))
+                            }}
+                          />
+                        ) : (fila.slug ? dinero(fila.precio) : '$')}
+                      </td>
+                      <td className="fact-planilla__imp">{fila.slug && Number(fila.cantidad) ? dinero(fila.precio * Number(fila.cantidad)) : '$'}</td>
+                    </>
+                  ) : null}
                   <td>
                     {fila.slug ? (
                       <button type="button" className="fact-planilla__del" onClick={() => limpiarFila(fila.id)}>×</button>
@@ -1036,8 +1273,12 @@ function FactureroView({ productos, onGuardar }) {
             <tfoot>
               <tr>
                 <td colSpan={3}>TOTAL</td>
-                <td />
-                <td className="fact-planilla__total">{dinero(total)}</td>
+                {verPrecios ? (
+                  <>
+                    <td />
+                    <td className="fact-planilla__total">{dinero(total)}</td>
+                  </>
+                ) : null}
                 <td />
               </tr>
             </tfoot>
@@ -1045,17 +1286,44 @@ function FactureroView({ productos, onGuardar }) {
         </div>
         <div className="fact-pie">
           {cobro === 'pagado' ? (
-            <label className="fact-abono">
-              Dinero abonó
-              <input type="number" min="0" value={recibido} onChange={(e) => setRecibido(e.target.value)} placeholder="0" />
-            </label>
+            verPrecios ? (
+              <>
+                <label className="fact-abono">
+                  Dinero abonó
+                  <input type="number" min="0" value={recibido} onChange={(e) => setRecibido(e.target.value)} placeholder="0" />
+                </label>
+                <div className={`fact-vuelto ${plata && vuelto < 0 ? 'is-falta' : ''}`}>
+                  <span>{plata && vuelto < 0 ? 'Falta' : 'Vuelto'}</span>
+                  <strong>{plata ? dinero(Math.abs(vuelto)) : '$'}</strong>
+                </div>
+              </>
+            ) : (
+              <p className="vacio">Registrá si pagó o se lleva fiado.</p>
+            )
+          ) : verPrecios ? (
+            <>
+                <label className="fact-abono">
+                  Entregó ahora
+                  <input
+                    type="number"
+                    min="0"
+                    value={recibido === '' ? textoMonto(total) : recibido}
+                    onChange={(e) => setRecibido(e.target.value)}
+                  />
+                </label>
+                <div className="fact-vuelto is-falta">
+                  <span>Queda debiendo</span>
+                  <strong>{dinero(Math.max(0, total - plata))}</strong>
+                </div>
+                <p className="fact-pie__nota">
+                  {plata > 0 && plata < total
+                    ? `${cliente || 'El cliente'} entrega ${dinero(plata)} y queda debiendo ${dinero(total - plata)}.`
+                    : `Queda anotado que ${cliente || 'el cliente'} debe ${dinero(total)}.`}
+                </p>
+            </>
           ) : (
-            <p className="vacio">Queda anotado que {cliente || 'el cliente'} debe {dinero(total)}.</p>
+            <p className="vacio">Queda anotado el fiado de {cliente || 'el cliente'}.</p>
           )}
-          <div className={`fact-vuelto ${plata && vuelto < 0 ? 'is-falta' : ''}`}>
-            <span>{plata && vuelto < 0 ? 'Falta' : 'Vuelto'}</span>
-            <strong>{plata ? dinero(Math.abs(vuelto)) : '$'}</strong>
-          </div>
         </div>
         <div className="comp__cobro">
           <p className="comp__label">¿Pagó o se lleva fiado?</p>
@@ -1083,15 +1351,13 @@ function FactureroView({ productos, onGuardar }) {
               setError('Poné el nombre y el apellido del cliente.')
               return
             }
-            if (cobro === 'fiado' && !telefono.trim()) {
-              setError('Poné el teléfono para avisarle lo que debe.')
-              return
-            }
             if (cobro === 'pagado' && plata && vuelto < 0) {
               setError('Falta plata. Si se lo lleva y paga después, tocá Fiado.')
               return
             }
-            const notas = [direccion && `Dir. ${direccion}`, telefono && `Tel. ${telefono}`, entidad && `Entidad ${entidad}`]
+            const entregaFiado = cobro === 'fiado' ? Math.min(Math.max(0, plata), total) : 0
+            const pagoCompleto = cobro === 'pagado' || (entregaFiado > 0 && entregaFiado >= total)
+            const notas = [direccion && `Dir. ${direccion}`, telefono && `Tel. ${telefono}`, entidad && `Entidad ${entidad}`, cobro === 'fiado' && entregaFiado > 0 && `Entregó ${dinero(entregaFiado)}`]
               .filter(Boolean)
               .join(' · ')
             guardarVentaLocal({
@@ -1099,17 +1365,36 @@ function FactureroView({ productos, onGuardar }) {
               cliente,
               telefono,
               fecha,
-              pagado: cobro === 'pagado',
+              pagado: pagoCompleto,
               items: filasOk.map((fila) => ({
                 slug: fila.slug,
                 nombre: fila.nombre,
                 codigo: fila.codigo,
                 cantidad: Number(fila.cantidad),
                 precio: fila.precio,
+                tipo: fila.tipo,
               })),
             })
-            registrarCargo({ cliente, telefono, total, modo: cobro, fecha, notas })
-            setLineas(Array.from({ length: 12 }, filaFacturaVacia))
+            registrarCargo({
+              cliente,
+              telefono,
+              total,
+              modo: pagoCompleto ? 'pagado' : 'fiado',
+              fecha,
+              notas,
+              items: filasOk.map((fila) => ({
+                slug: fila.slug,
+                nombre: fila.nombre,
+                codigo: fila.codigo,
+                cantidad: Number(fila.cantidad),
+                precio: fila.precio,
+                tipo: fila.tipo,
+              })),
+            })
+            if (!pagoCompleto && entregaFiado > 0) {
+              registrarCobro({ cliente, telefono, monto: entregaFiado, notas: 'Seña / entregó ahora', fecha })
+            }
+            setLineas(Array.from({ length: 5 }, filaFacturaVacia))
             setNombre('')
             setApellido('')
             setDireccion('')
@@ -1130,11 +1415,89 @@ function FactureroView({ productos, onGuardar }) {
   )
 }
 
-function ReposicionView({ items, onCambio }) {
+function filaRepoVacia() {
+  return { id: `r_${Math.random().toString(36).slice(2, 8)}`, codigo: '', slug: '', nombre: '', tipo: 'producto', cantidad: '' }
+}
+
+function ReposicionView({ productos, alerta, onCambio }) {
+  const { verPrecios } = usePanel()
+  const [lineas, setLineas] = useState(() => [filaRepoVacia()])
+  const [sugerencias, setSugerencias] = useState({ id: '', items: [] })
+  const [error, setError] = useState('')
+  const [ok, setOk] = useState('')
+  const [cantAlerta, setCantAlerta] = useState({})
+
+  const aplicarCodigo = (id, codigo, elegido) => {
+    const texto = String(codigo || '').trim()
+    if (!texto) {
+      setLineas((lista) => lista.map((fila) => (fila.id === id ? { ...filaRepoVacia(), id } : fila)))
+      setSugerencias({ id: '', items: [] })
+      return
+    }
+    const hits = elegido ? [elegido] : buscarProductos(texto, productos)
+    const exactos = hits.filter((item) => item.codigo.toLowerCase() === texto.toLowerCase())
+    const prod = elegido || exactos[0] || (hits.length === 1 ? hits[0] : null)
+    if (!prod) {
+      setSugerencias({ id, items: hits.slice(0, 8) })
+      setError(hits.length ? '' : 'No hay un producto con ese código.')
+      return
+    }
+    setError('')
+    setLineas((lista) => {
+      const next = lista.map((fila) => (
+        fila.id === id
+          ? { ...fila, codigo: prod.codigo, slug: prod.slug, nombre: prod.nombre, tipo: prod.tipo }
+          : fila
+      ))
+      return next.some((fila) => !fila.slug) ? next : [...next, filaRepoVacia()]
+    })
+    setSugerencias({ id: '', items: [] })
+  }
+
+  const guardarPedido = () => {
+    const filasOk = lineas.filter((fila) => fila.slug && Number(fila.cantidad) > 0)
+    if (!filasOk.length) {
+      setError('Cargá al menos un producto y la cantidad que pediste.')
+      return
+    }
+    for (const fila of filasOk) {
+      registrarReposicion({
+        slug: fila.slug,
+        nombre: fila.nombre,
+        cantidad: Number(fila.cantidad),
+        costo: precioDe(fila.slug).costo || precioDe(fila.slug).venta,
+        proveedor: 'Reposición',
+      })
+    }
+    setOk(`Entraron ${filasOk.map((fila) => `${fila.nombre} ${formatoStock(fila.cantidad, fila.tipo)}`).join(', ')}.`)
+    setError('')
+    setLineas([filaRepoVacia()])
+    onCambio()
+  }
+
+  const reponerAlerta = (item) => {
+    const cantidad = Number(String(cantAlerta[item.slug] ?? '').replace(',', '.'))
+    if (!(cantidad > 0)) {
+      setError(`Poné cuánto entra de ${item.nombre} (${etiquetaUnidad(item.tipo)}).`)
+      return
+    }
+    registrarReposicion({
+      slug: item.slug,
+      nombre: item.nombre,
+      cantidad,
+      costo: precioDe(item.slug).costo || precioDe(item.slug).venta,
+      proveedor: 'Reposición',
+    })
+    setCantAlerta((mapa) => ({ ...mapa, [item.slug]: '' }))
+    setOk(`Entró ${formatoStock(cantidad, item.tipo)} de ${item.nombre}.`)
+    setError('')
+    onCambio()
+  }
+
   return (
     <>
       <h1>Reposición</h1>
-      <p className="dash-sub">Elegí proveedor y cargá lo que entra. El costo se anota solo en Pérdidas.</p>
+      <p className="dash-sub">Anotá lo que pediste al proveedor: entra al stock esa cantidad (litros, kilos o unidades).</p>
       <div className="proveedores">
         {PROVEEDORES.map((item) => (
           <a key={item.id} className="proveedor-btn" href={item.url} target="_blank" rel="noreferrer">
@@ -1143,29 +1506,99 @@ function ReposicionView({ items, onCambio }) {
           </a>
         ))}
       </div>
+      {error ? <p className="gate__error">{error}</p> : null}
+      {ok ? <p className="ok-msg">{ok}</p> : null}
       <article className="panel">
-        {items.length === 0 ? (
+        <h2>Lo que pediste</h2>
+        <div className="repo-lineas">
+          {lineas.map((fila) => (
+            <div className="repo-linea" key={fila.id}>
+              <label className={`repo-linea__cod${sugerencias.id === fila.id && sugerencias.items.length ? ' is-sug' : ''}`}>
+                Código
+                <input
+                  value={fila.codigo}
+                  autoComplete="off"
+                  placeholder="Cód."
+                  onChange={(e) => {
+                    const v = e.target.value
+                    setLineas((lista) => lista.map((row) => (row.id === fila.id ? { ...row, codigo: v } : row)))
+                    setSugerencias({ id: fila.id, items: buscarProductos(v, productos).slice(0, 8) })
+                  }}
+                  onBlur={() => window.setTimeout(() => aplicarCodigo(fila.id, fila.codigo), 120)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      aplicarCodigo(fila.id, fila.codigo)
+                    }
+                  }}
+                />
+                {sugerencias.id === fila.id && sugerencias.items.length ? (
+                  <div className="fact-sug">
+                    {sugerencias.items.map((item) => (
+                      <button
+                        key={item.slug}
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => aplicarCodigo(fila.id, item.codigo, item)}
+                      >
+                        <b>{item.codigo}</b>
+                        <span>{item.nombre}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </label>
+              <p className="repo-linea__nom">{fila.nombre || '—'}</p>
+              <label>
+                Cantidad ({fila.slug ? unidadDeTipo(fila.tipo) : 'u'})
+                <input
+                  type="number"
+                  min="0"
+                  step={pasoStock(fila.tipo)}
+                  value={fila.cantidad}
+                  disabled={!fila.slug}
+                  placeholder={fila.slug ? unidadDeTipo(fila.tipo) : ''}
+                  onChange={(e) => setLineas((lista) => lista.map((row) => (row.id === fila.id ? { ...row, cantidad: e.target.value } : row)))}
+                />
+              </label>
+            </div>
+          ))}
+        </div>
+        <button type="button" className="dash-btn dash-btn--navy" onClick={guardarPedido}>
+          Entró al depósito
+        </button>
+      </article>
+      <article className="panel">
+        <h2>Faltantes</h2>
+        {alerta.length === 0 ? (
           <p className="vacio">No hay productos en alerta o sin stock.</p>
         ) : (
-          items.map((item) => {
+          alerta.map((item) => {
             const costo = precioDe(item.slug).costo
             return (
               <div className="stock-edit" key={item.slug}>
                 <img src={item.foto} alt="" onError={(e) => onFotoError(e, item.slug)} />
                 <div>
                   <strong>{item.nombre}</strong>
-                  <p>Quedan {stockDe(item.slug)} · cobro {dinero(costo)}</p>
+                  <p>
+                    Quedan {formatoStock(stockDe(item.slug), item.tipo)}
+                    {verPrecios && costo ? ` · venta ${dinero(costo)}` : ''}
+                  </p>
                 </div>
-                <button
-                  type="button"
-                  className="dash-btn dash-btn--plus-wide"
-                  onClick={() => {
-                    registrarReposicion({ slug: item.slug, nombre: item.nombre, cantidad: 10, costo, proveedor: 'Reposición' })
-                    onCambio()
-                  }}
-                >
-                  Reponer +10
-                </button>
+                <div className="repo-alerta">
+                  <input
+                    type="number"
+                    min="0"
+                    step={pasoStock(item.tipo)}
+                    value={cantAlerta[item.slug] ?? ''}
+                    placeholder={unidadDeTipo(item.tipo)}
+                    onChange={(e) => setCantAlerta((mapa) => ({ ...mapa, [item.slug]: e.target.value }))}
+                    aria-label={`Cantidad en ${etiquetaUnidad(item.tipo)}`}
+                  />
+                  <button type="button" className="dash-btn dash-btn--navy" onClick={() => reponerAlerta(item)}>
+                    Entró
+                  </button>
+                </div>
               </div>
             )
           })
@@ -1209,7 +1642,9 @@ function PeriodosView({ titulo, subtitulo, total, anios, color, conClientes = fa
                           .sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')))
                           .map((item) => (
                           <div className="importe-linea" key={item.id}>
-                            <span>{item.cliente?.trim() || 'Sin nombre'}</span>
+                            <span>
+                              {fechaHumana(item.fecha)} · {item.cliente?.trim() || 'Sin nombre'}
+                            </span>
                             <strong>{dinero(item.total)}</strong>
                           </div>
                         ))
@@ -1301,18 +1736,28 @@ export default function DashboardApp({ role, onSalir }) {
   const [tick, setTick] = useState(0)
   const [nombre, setNombre] = useState(() => leerNombre())
   const [menu, setMenu] = useState(false)
+  const [avisoAlerta, setAvisoAlerta] = useState(false)
   const productos = useMemo(() => listarProductos(), [tick])
 
   useEffect(() => {
     let alive = true
+    const traerPedidos = () => {
+      cargarPedidos().then((lista) => {
+        if (!alive) return
+        aplicarPedidosAlStock(lista)
+        setPedidos(lista)
+      })
+    }
     hidratarCatalogoRemoto().then(() => { if (alive) setTick((n) => n + 1) })
-    cargarPedidos().then((lista) => {
-      if (!alive) return
-      aplicarPedidosAlStock(lista)
-      setPedidos(lista)
-      setTick((n) => n + 1)
-    })
-    return () => { alive = false }
+    traerPedidos()
+    const timer = window.setInterval(traerPedidos, 20000)
+    const onFocus = () => traerPedidos()
+    window.addEventListener('focus', onFocus)
+    return () => {
+      alive = false
+      window.clearInterval(timer)
+      window.removeEventListener('focus', onFocus)
+    }
   }, [])
 
   useEffect(() => {
@@ -1330,21 +1775,42 @@ export default function DashboardApp({ role, onSalir }) {
   const visibles = pedidos.filter((item) => !esPedidoCatalogo(item))
   const pendientes = visibles.filter((item) => item.estado.includes('pendiente') || item.estado === '')
   const ultimos = visibles.filter((item) => !estaEntregado(item.estado)).slice(0, 8)
-  const conteo = conteoStock(productos.map((item) => item.slug))
-  const alertaItems = productos.filter((item) => esAlerta(item.slug) || sinStock(item.slug))
+  const conteo = conteoStock(productos)
+  const alertaItems = productos.filter((item) => esAlerta(item.slug, item.tipo) || sinStock(item.slug))
   const filtrados = productos.filter((item) => {
     const q = busqueda.trim().toLowerCase()
     return !q || item.nombre.toLowerCase().includes(q) || item.linea.toLowerCase().includes(q) || item.codigo.toLowerCase().includes(q)
   })
   const rolLabel = etiquetaRol(role)
   const displayName = nombre.trim() || (role === 'jefe' ? 'Juan Fernández' : 'Empleado')
+  const esJefe = role === 'jefe'
+  const verPrecios = esJefe
+  const navAll = NAV.filter((item) => esJefe || !NAV_SOLO_JEFE.has(item.id))
+  const navMore = NAV_MORE.filter((item) => esJefe || !NAV_SOLO_JEFE.has(item.id))
   const refresh = () => setTick((n) => n + 1)
   const actual = NAV.find((item) => item.id === vista)
   const ir = (id) => { setBusqueda(''); setVista(id); setMenu(false) }
   const deudores = clientesConDeuda()
   const badge = (id) => (id === 'pedidos' ? pendientes.length : id === 'stock' ? conteo.alerta : id === 'cuentas' ? deudores.length : 0)
 
+  useEffect(() => {
+    if (!avisoAlerta) return
+    const cerrar = (event) => {
+      if (event.key === 'Escape') setAvisoAlerta(false)
+    }
+    const click = (event) => {
+      if (!event.target.closest('.alerta-wrap')) setAvisoAlerta(false)
+    }
+    window.addEventListener('keydown', cerrar)
+    window.addEventListener('mousedown', click)
+    return () => {
+      window.removeEventListener('keydown', cerrar)
+      window.removeEventListener('mousedown', click)
+    }
+  }, [avisoAlerta])
+
   return (
+    <PanelContext.Provider value={{ role, verPrecios, esJefe }}>
     <div className={`dash ${menu ? 'is-menu' : ''}`}>
       <button type="button" className="dash-overlay" aria-label="Cerrar menú" hidden={!menu} onClick={() => setMenu(false)} />
       <aside className="dash-side" id="dash-drawer">
@@ -1360,7 +1826,7 @@ export default function DashboardApp({ role, onSalir }) {
         </div>
         <hr className="dash-side__hr" />
         <nav className="dash-nav dash-nav--all" aria-label="Secciones">
-          {NAV.map((item) => {
+          {navAll.map((item) => {
             const Icon = item.icon
             const n = badge(item.id)
             return (
@@ -1373,7 +1839,7 @@ export default function DashboardApp({ role, onSalir }) {
           })}
         </nav>
         <nav className="dash-nav dash-nav--more" aria-label="Más secciones">
-          {NAV_MORE.map((item) => {
+          {navMore.map((item) => {
             const Icon = item.icon
             const n = badge(item.id)
             return (
@@ -1405,14 +1871,43 @@ export default function DashboardApp({ role, onSalir }) {
             </div>
           </div>
           <div className="dash-top__actions">
-            <button type="button" className="alerta-chip" onClick={() => ir('stock')}>
-              <span>Alerta</span>
-              <strong>{conteo.alerta}</strong>
-            </button>
+            <div className="alerta-wrap">
+              <button
+                type="button"
+                className="alerta-chip"
+                aria-expanded={avisoAlerta}
+                onClick={() => setAvisoAlerta((v) => !v)}
+              >
+                <span>Alerta</span>
+                <strong>{alertaItems.length}</strong>
+              </button>
+              {avisoAlerta ? (
+                <>
+                  <button type="button" className="alerta-fondo" aria-label="Cerrar aviso" onClick={() => setAvisoAlerta(false)} />
+                  <div className="alerta-aviso" role="status">
+                    <p className="alerta-aviso__tit">Aviso de stock</p>
+                    {alertaItems.length === 0 ? (
+                      <p className="vacio">No falta nada por ahora.</p>
+                    ) : (
+                      <ul>
+                        {alertaItems.map((item) => (
+                          <li key={item.slug}>
+                            <span>
+                              <b>{item.codigo}</b> {item.nombre}
+                            </span>
+                            <strong>{sinStock(item.slug) ? 'Sin stock' : `Quedan ${formatoStock(stockDe(item.slug), item.tipo)}`}</strong>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </>
+              ) : null}
+            </div>
             <button type="button" className="dash-btn dash-btn--salir" onClick={onSalir}>Salir</button>
             <button type="button" className="dash-top__avatar" aria-label="Ajustes" onClick={() => ir('ajustes')}>
               {iniciales(displayName, role)}
-              {conteo.alerta > 0 ? <span className="dash-top__dot">{conteo.alerta}</span> : null}
+              {conteo.alerta > 0 || conteo.sin > 0 ? <span className="dash-top__dot">{alertaItems.length}</span> : null}
             </button>
           </div>
         </header>
@@ -1435,7 +1930,7 @@ export default function DashboardApp({ role, onSalir }) {
             {vista === 'productos' && <ProductosView productos={productos} onCambio={refresh} />}
             {vista === 'facturero' && <FactureroView productos={productos} onGuardar={refresh} />}
             {vista === 'cuentas' && <CuentasScreen tick={tick} />}
-            {vista === 'reposicion' && <ReposicionView items={alertaItems} onCambio={refresh} />}
+            {vista === 'reposicion' && <ReposicionView productos={productos} alerta={alertaItems} onCambio={refresh} />}
             {vista === 'importes' && <PeriodosView titulo="Importes" subtitulo="Solo quienes pagaron, con nombre y apellido al lado del precio." total={totalVentas()} anios={periodosVentas()} color="ok" conClientes />}
             {vista === 'perdidas' && <PeriodosView titulo="Pérdidas" subtitulo="Gastos de reposición, agrupados por mes y año" total={totalPerdidas()} anios={periodosPerdidas()} color="bad" />}
             {vista === 'ajustes' && <AjustesView role={role} nombre={nombre} onNombre={setNombre} onSalir={onSalir} />}
@@ -1459,5 +1954,6 @@ export default function DashboardApp({ role, onSalir }) {
         })}
       </nav>
     </div>
+    </PanelContext.Provider>
   )
 }

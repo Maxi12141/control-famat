@@ -1,7 +1,7 @@
 import { buscarProductoPorNombre } from './catalog.js'
-import { fechaHumana, hoyISO } from './format.js'
+import { fechaHumana, hoyISO, slugify } from './format.js'
 import { cantidadItem, itemsPedido, productoDeItemPedido, unidadItem } from './pedidos.js'
-import { precioDe } from './precios.js'
+import { precioCobroDe } from './precios.js'
 import { guardarJSON, leerJSON } from './storage.js'
 
 const KEY_EMPRESA = 'famat_empresa'
@@ -95,10 +95,11 @@ export function lineasDesdePedido(pedido) {
       id: `${pedido.id}-${index}`,
       slug,
       codigo: producto?.codigo || '',
-      nombre: item.nombre || producto?.nombre || 'Ítem',
+      nombre: item.nombre || producto?.nombre || 'Objeto',
       cantidad: cantidadItem(item) || 1,
       unidad: unidadItem(item),
-      precio: precioItem || precioDe(slug).venta || precioDe(slug).costo || 0,
+      tipo: item.tipo || producto?.tipo || '',
+      precio: precioItem || precioCobroDe(slug) || 0,
     }
   })
 }
@@ -277,9 +278,9 @@ function filasFacturaB(doc) {
     .map((item) => {
       const detalle = `${item.codigo ? `${item.codigo} · ` : ''}${item.nombre}${item.unidad ? ` (${item.unidad})` : ''}`
       const importe = Number(item.precio || 0) * Number(item.cantidad || 0)
-      return `<tr>
+      return `<tr class="item">
         <td class="cant">${esc(item.cantidad)}</td>
-        <td>${esc(detalle)}</td>
+        <td class="desc">${esc(detalle)}</td>
         <td class="num">${esc(montoAR(item.precio))}</td>
         <td class="num">${esc(montoAR(importe))}</td>
       </tr>`
@@ -322,9 +323,9 @@ function htmlRemito(doc) {
     .cli{display:grid;grid-template-columns:1fr 1fr;gap:8px 18px;margin-bottom:16px;font-size:13px}
     .cli b{color:#0b3a56}
     table{width:100%;border-collapse:collapse;font-size:13px}
-    th{background:#0b3a56;color:#fff;text-align:left;padding:8px 10px;font-weight:700}
+    th{background:#0b3a56;color:#fff;text-align:left;padding:6px 10px;font-weight:700}
     th.num,td.num{text-align:right;white-space:nowrap}
-    td{border-bottom:1px solid #e2e8f0;padding:8px 10px;vertical-align:top}
+    td{border-bottom:1px solid #e2e8f0;padding:4px 10px;vertical-align:middle;line-height:1.25}
     tfoot td{background:#0b3a56;color:#fff;font-weight:800;border-bottom:0}
     .notas{margin-top:14px;font-size:12px;color:#334155}
     .firmas{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:48px}
@@ -412,17 +413,22 @@ function htmlFacturaB(doc) {
     .checks{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;font-size:11px}
     .chk{display:inline-block;width:11px;height:11px;border:1.2px solid #111;margin-right:4px;vertical-align:-1px;position:relative}
     .chk.on:after{content:"×";position:absolute;inset:-4px 0 0;text-align:center;font-size:14px;font-weight:800;line-height:14px}
-    .cuerpo{flex:1;display:flex;min-height:0}
+    .cuerpo{flex:1;display:flex;min-height:118mm}
     .lado{writing-mode:vertical-rl;transform:rotate(180deg);font-size:8px;font-weight:700;letter-spacing:.12em;padding:10px 3px;border-right:1.4px solid #111;display:grid;place-items:center;white-space:nowrap}
-    table{width:100%;border-collapse:collapse;font-size:11.5px;flex:1;background:#fff}
-    th{background:#eee8e0;color:#000;border:0;border-bottom:1.5px solid #000;padding:8px 7px;font-size:11px;font-weight:800;letter-spacing:.04em;text-align:center}
-    td{border:0;background:#fff;color:#000;padding:7px 8px;vertical-align:top}
-    td.vacio{text-align:center;color:#666;padding:16px}
+    .tabla-box{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
+    table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:11px;background:#fff;flex:0 0 auto}
+    th{background:#eee8e0;color:#000;border:0;border-bottom:1.5px solid #000;border-right:1px solid #111;padding:5px 6px;font-size:10.5px;font-weight:800;letter-spacing:.04em;text-align:center}
+    td{border:0;border-right:1px solid #c9c3ba;border-bottom:1px dotted #c9c3ba;background:#fff;color:#000;padding:3px 7px;vertical-align:middle;line-height:1.25}
+    th:last-child,td:last-child{border-right:0}
+    td.vacio{text-align:center;color:#666;padding:10px;height:auto;border-bottom:0}
     td.cant{text-align:center;width:14%}
+    td.desc{text-align:left}
     td.num,th.num{text-align:right;white-space:nowrap}
     col.cant{width:14%}
     col.desc{width:50%}
     col.pu,col.imp{width:18%}
+    .resto{flex:1 1 auto;min-height:24px;border-top:0;position:relative;background:repeating-linear-gradient(to bottom,#fff 0 17px,#d8d3cb 17px 18px)}
+    .resto:before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(#c9c3ba,#c9c3ba) 14% 0/1px 100% no-repeat,linear-gradient(#c9c3ba,#c9c3ba) 64% 0/1px 100% no-repeat,linear-gradient(#c9c3ba,#c9c3ba) 82% 0/1px 100% no-repeat}
     .pie{border-top:1.6px solid #111;padding:8px 12px 10px}
     .ley{font-size:9.5px;font-style:italic;margin-bottom:8px}
     .pie-row{display:grid;grid-template-columns:1fr 58mm;gap:12px;align-items:end}
@@ -434,8 +440,8 @@ function htmlFacturaB(doc) {
     .obs{font-size:10px;color:#333;margin-top:6px}
     @media print{
       html,body,.fb{background:#fff!important;color:#000!important}
-      body{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-      .fb{width:auto;min-height:0}
+      body,.resto{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      .fb{width:auto;min-height:277mm}
     }
   `
   const cuerpo = `
@@ -497,18 +503,21 @@ function htmlFacturaB(doc) {
     </div>
     <div class="cuerpo">
       <div class="lado">ORIGINAL BLANCO · DUPLICADO COLOR</div>
-      <table>
-        <colgroup><col class="cant"><col class="desc"><col class="pu"><col class="imp"></colgroup>
-        <thead>
-          <tr>
-            <th>CANT.</th>
-            <th>DESCRIPCIÓN</th>
-            <th class="num">P. UNITARIO</th>
-            <th class="num">IMPORTE</th>
-          </tr>
-        </thead>
-        <tbody>${filasFacturaB(doc)}</tbody>
-      </table>
+      <div class="tabla-box">
+        <table>
+          <colgroup><col class="cant"><col class="desc"><col class="pu"><col class="imp"></colgroup>
+          <thead>
+            <tr>
+              <th>CANT.</th>
+              <th>DESCRIPCIÓN</th>
+              <th class="num">P. UNITARIO</th>
+              <th class="num">IMPORTE</th>
+            </tr>
+          </thead>
+          <tbody>${filasFacturaB(doc)}</tbody>
+        </table>
+        <div class="resto" aria-hidden="true"></div>
+      </div>
     </div>
     <div class="pie">
       <p class="ley">147 “Teléfono Gratuito CABA, Área de Defensa y Protección al Consumidor”.</p>
@@ -550,18 +559,134 @@ export function registrarEmision(doc) {
   return row
 }
 
-export function descargarHtml(doc) {
+function nombreArchivoPdf(doc) {
+  const tipo = doc.tipo === 'remito' ? 'Remito' : 'Factura'
+  const nombre = (slugify(doc.cliente) || 'sin-nombre')
+    .split('-')
+    .filter(Boolean)
+    .map((parte) => parte.charAt(0).toUpperCase() + parte.slice(1))
+    .join('-') || 'Sin-nombre'
+  const { dia, mes, anio } = partesFecha(doc.fecha)
+  const fecha = dia && mes && anio ? `${dia}-${mes}-${anio}` : String(doc.fecha || '').replace(/\//g, '-') || hoyISO()
+  return `${tipo}-${nombre}-${fecha}.pdf`
+}
+
+function esperarIframeListo(iframe, target) {
+  return new Promise((resolve, reject) => {
+    let salio = false
+    const ok = () => {
+      if (salio) return
+      salio = true
+      resolve()
+    }
+    const timer = window.setTimeout(() => {
+      if (salio) return
+      salio = true
+      reject(new Error('No se pudo armar el documento.'))
+    }, 10000)
+    iframe.onload = () => {
+      window.clearTimeout(timer)
+      window.setTimeout(ok, 120)
+    }
+    if (target?.readyState === 'complete') {
+      window.clearTimeout(timer)
+      window.setTimeout(ok, 120)
+    }
+  })
+}
+
+export async function descargarPdf(doc) {
   const html = htmlComprobante(doc)
-  const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  const slug = etiquetaTipoDoc(doc.tipo).toLowerCase().replace(/\s+/g, '-')
-  a.href = url
-  a.download = `Famat-${slug}-${doc.numero}.html`
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 1500)
+  const iframe = document.createElement('iframe')
+  iframe.setAttribute('aria-hidden', 'true')
+  iframe.setAttribute('title', 'Vista para PDF')
+  iframe.style.position = 'fixed'
+  iframe.style.left = '0'
+  iframe.style.top = '0'
+  iframe.style.width = '794px'
+  iframe.style.height = '1123px'
+  iframe.style.border = '0'
+  iframe.style.opacity = '0'
+  iframe.style.pointerEvents = 'none'
+  iframe.style.zIndex = '-1'
+  document.body.appendChild(iframe)
+  const win = iframe.contentWindow
+  const target = iframe.contentDocument
+  if (!win || !target) {
+    iframe.remove()
+    throw new Error('No se pudo generar el PDF.')
+  }
+  const listo = esperarIframeListo(iframe, target)
+  target.open()
+  target.write(html)
+  target.close()
+  try {
+    await listo
+    const hoja = target.querySelector('.fb, .hoja') || target.body
+    const alto = Math.max(hoja.scrollHeight, hoja.offsetHeight, target.documentElement.scrollHeight, 1123)
+    iframe.style.height = `${alto + 24}px`
+    await new Promise((resolve) => window.setTimeout(resolve, 60))
+    const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+      import('html2canvas'),
+      import('jspdf'),
+    ])
+    const canvas = await html2canvas(hoja, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: '#ffffff',
+      logging: false,
+      imageTimeout: 2000,
+      width: hoja.scrollWidth,
+      height: hoja.scrollHeight,
+      windowWidth: hoja.scrollWidth,
+      windowHeight: hoja.scrollHeight,
+      onclone: (clon) => {
+        clon.documentElement.style.background = '#fff'
+        clon.body.style.background = '#fff'
+        const factura = clon.querySelector('.fb')
+        if (factura) {
+          factura.style.minHeight = '277mm'
+          if (factura.scrollHeight < 1040) factura.style.height = '277mm'
+        }
+      },
+    })
+    if (!canvas.width || !canvas.height) {
+      throw new Error('No se pudo capturar el documento para el PDF.')
+    }
+    const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
+    const pageW = pdf.internal.pageSize.getWidth()
+    const pageH = pdf.internal.pageSize.getHeight()
+    const imgW = pageW
+    const imgH = (canvas.height * imgW) / canvas.width
+    const imgData = canvas.toDataURL('image/jpeg', 0.93)
+    pdf.setProperties({
+      title: `${etiquetaTipoDoc(doc.tipo)} ${doc.numero}`,
+      subject: doc.cliente || '',
+      creator: 'Control Famat',
+    })
+    let leftover = imgH
+    let y = 0
+    pdf.addImage(imgData, 'JPEG', 0, y, imgW, imgH)
+    leftover -= pageH
+    while (leftover > 1) {
+      y -= pageH
+      pdf.addPage()
+      pdf.addImage(imgData, 'JPEG', 0, y, imgW, imgH)
+      leftover -= pageH
+    }
+    const blob = pdf.output('blob')
+    const url = URL.createObjectURL(blob)
+    const enlace = document.createElement('a')
+    enlace.href = url
+    enlace.download = nombreArchivoPdf(doc)
+    enlace.rel = 'noopener'
+    document.body.appendChild(enlace)
+    enlace.click()
+    enlace.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1500)
+  } finally {
+    iframe.remove()
+  }
 }
 
 export function imprimirHtml(doc) {
