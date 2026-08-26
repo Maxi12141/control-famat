@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { dinero, fechaHumana } from '../lib/format.js'
 import {
   etiquetaModo,
+  linkWhatsAppDeuda,
   movimientosDe,
   registrarCobro,
   resumenClientes,
@@ -17,8 +18,9 @@ export default function CuentasScreen({ tick }) {
   const refresh = () => setRev((n) => n + 1)
 
   const clientes = useMemo(() => resumenClientes(), [tick, rev])
-  const deben = clientes.filter((row) => row.debe > 0.5)
-  const lista = filtro === 'deben' ? deben : clientes
+  const fiados = clientes.filter((row) => row.tieneFiado)
+  const deben = fiados.filter((row) => row.debe > 0.5)
+  const lista = filtro === 'deben' ? deben : fiados
   const deuda = totalDeuda()
 
   const cobrar = (row) => {
@@ -36,19 +38,19 @@ export default function CuentasScreen({ tick }) {
   return (
     <>
       <h1>Cuentas</h1>
-      <p className="dash-sub">Acá ves quién pagó el precio, quién se llevó fiado y cuánto queda debiendo cuando vuelve.</p>
+      <p className="dash-sub">Acá están todos los que se llevaron fiado, con nombre, apellido y teléfono para avisarles lo que deben.</p>
       <div className="kpi-row">
         <article className="kpi kpi--red">
           <span>Deben ahora</span>
           <strong>{dinero(deuda)}</strong>
         </article>
         <article className="kpi kpi--ink">
-          <span>Clientes con fiado</span>
+          <span>Personas que deben</span>
           <strong>{deben.length}</strong>
         </article>
         <article className="kpi kpi--teal">
-          <span>Cuentas cargadas</span>
-          <strong>{clientes.length}</strong>
+          <span>Fiados cargados</span>
+          <strong>{fiados.length}</strong>
         </article>
       </div>
       <div className="filtro-tipos">
@@ -56,7 +58,7 @@ export default function CuentasScreen({ tick }) {
           Deben
         </button>
         <button type="button" className={filtro === 'todos' ? 'is-on' : ''} onClick={() => setFiltro('todos')}>
-          Todos
+          Todos los fiados
         </button>
       </div>
       {aviso ? <p className="ok-msg">{aviso}</p> : null}
@@ -64,8 +66,8 @@ export default function CuentasScreen({ tick }) {
         <article className="panel">
           <p className="vacio">
             {filtro === 'deben'
-              ? 'Nadie debe por ahora. Cuando alguien se lleve fiado, aparece acá.'
-              : 'Todavía no hay pagos ni fiados anotados. Se cargan al imprimir la factura o desde el pedido.'}
+              ? 'Nadie debe por ahora. Cuando alguien se lleve fiado, aparece acá con nombre y teléfono.'
+              : 'Todavía no hay fiados anotados. Se cargan en Facturación o desde el pedido.'}
           </p>
         </article>
       ) : (
@@ -73,8 +75,9 @@ export default function CuentasScreen({ tick }) {
           const key = row.cliente
           const abiertoEsta = abierto === key
           const movs = abiertoEsta ? movimientosDe(row.cliente) : []
+          const wa = row.debe > 0.5 ? linkWhatsAppDeuda(row.cliente, row.telefono, row.debe) : ''
           return (
-            <article className="panel" key={key}>
+            <article className="panel cuenta-card" key={key}>
               <button
                 type="button"
                 className="cuenta-top"
@@ -82,34 +85,43 @@ export default function CuentasScreen({ tick }) {
               >
                 <div>
                   <strong>{row.cliente}</strong>
-                  <p>{row.telefono || 'sin teléfono'}</p>
+                  <p className="cuenta-tel">{row.telefono || 'Sin teléfono'}</p>
                 </div>
                 <span className={`pill ${row.debe > 0.5 ? 'pill--alert' : 'pill--ok'}`}>
-                  {row.debe > 0.5 ? `Debe ${dinero(row.debe)}` : 'Pagó bien'}
+                  {row.debe > 0.5 ? `Debe ${dinero(row.debe)}` : 'Ya pagó el fiado'}
                 </span>
               </button>
               <p className="cuenta-meta">
                 Vendió {dinero(row.vendido)} · cobrado {dinero(row.cobrado)}
               </p>
               {row.debe > 0.5 ? (
-                <div className="cuenta-cobro">
-                  <label>
-                    Cuando viene a pagar
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      value={abiertoEsta ? monto : ''}
-                      onChange={(e) => {
-                        setAbierto(key)
-                        setMonto(e.target.value)
-                      }}
-                      placeholder={String(Math.round(row.debe))}
-                    />
-                  </label>
-                  <button type="button" className="dash-btn dash-btn--navy" onClick={() => cobrar(row)}>
-                    Anotar cobro
-                  </button>
+                <div className="cuenta-aviso">
+                  {wa ? (
+                    <a className="pedido-wa" href={wa} target="_blank" rel="noopener noreferrer">
+                      Avisar por WhatsApp lo que debe
+                    </a>
+                  ) : (
+                    <p className="vacio">Falta un teléfono válido para avisarle lo que debe.</p>
+                  )}
+                  <div className="cuenta-cobro">
+                    <label>
+                      Cuando viene a pagar
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={abiertoEsta ? monto : ''}
+                        onChange={(e) => {
+                          setAbierto(key)
+                          setMonto(e.target.value)
+                        }}
+                        placeholder={String(Math.round(row.debe))}
+                      />
+                    </label>
+                    <button type="button" className="dash-btn dash-btn--navy" onClick={() => cobrar(row)}>
+                      Anotar cobro
+                    </button>
+                  </div>
                 </div>
               ) : null}
               {abiertoEsta ? (

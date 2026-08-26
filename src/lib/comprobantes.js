@@ -98,7 +98,7 @@ export function lineasDesdePedido(pedido) {
       nombre: item.nombre || producto?.nombre || 'Ítem',
       cantidad: cantidadItem(item) || 1,
       unidad: unidadItem(item),
-      precio: precioItem || precioDe(slug).venta || 0,
+      precio: precioItem || precioDe(slug).venta || precioDe(slug).costo || 0,
     }
   })
 }
@@ -252,16 +252,17 @@ export function armarComprobante({
 
 function filasRemito(doc) {
   if (!doc.lineas.length) {
-    return '<tr><td colspan="3" style="padding:12px;color:#64748b;text-align:center">Sin ítems</td></tr>'
+    return '<tr><td colspan="4" style="padding:12px;color:#64748b;text-align:center">Sin ítems</td></tr>'
   }
   return doc.lineas
     .map((item) => {
-      const cant = `${item.cantidad} ${item.unidad || ''}`.trim()
       const detalle = `${item.codigo ? `${item.codigo} · ` : ''}${item.nombre}`
+      const importe = Number(item.precio || 0) * Number(item.cantidad || 0)
       return `<tr>
-        <td>${esc(cant)}</td>
+        <td class="num">${esc(item.cantidad)}</td>
         <td>${esc(detalle)}</td>
-        <td>${esc(item.unidad || '')}</td>
+        <td class="num">${esc(montoAR(item.precio))}</td>
+        <td class="num">${esc(montoAR(importe))}</td>
       </tr>`
     })
     .join('')
@@ -322,7 +323,9 @@ function htmlRemito(doc) {
     .cli b{color:#0b3a56}
     table{width:100%;border-collapse:collapse;font-size:13px}
     th{background:#0b3a56;color:#fff;text-align:left;padding:8px 10px;font-weight:700}
+    th.num,td.num{text-align:right;white-space:nowrap}
     td{border-bottom:1px solid #e2e8f0;padding:8px 10px;vertical-align:top}
+    tfoot td{background:#0b3a56;color:#fff;font-weight:800;border-bottom:0}
     .notas{margin-top:14px;font-size:12px;color:#334155}
     .firmas{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:48px}
     .firmas p{border-top:1px solid #334155;padding-top:8px;text-align:center;font-size:12px}
@@ -353,9 +356,20 @@ function htmlRemito(doc) {
     </div>
     <table>
       <thead>
-        <tr><th>Cant.</th><th>Detalle</th><th>Unidad</th></tr>
+        <tr>
+          <th>Cant.</th>
+          <th>Detalle</th>
+          <th class="num">Precio unitario (por litros)</th>
+          <th class="num">Importe</th>
+        </tr>
       </thead>
       <tbody>${filasRemito(doc)}</tbody>
+      <tfoot>
+        <tr>
+          <td colspan="3">TOTAL</td>
+          <td class="num">${esc(montoAR(doc.total))}</td>
+        </tr>
+      </tfoot>
     </table>
     ${doc.notas ? `<p class="notas"><b>Observaciones:</b> ${esc(doc.notas)}</p>` : ''}
     <div class="firmas"><p>Entregó</p><p>Recibí conforme</p></div>

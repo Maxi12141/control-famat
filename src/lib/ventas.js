@@ -30,6 +30,9 @@ function registrarVenta(venta) {
     fecha: venta.fecha || hoyISO(),
     origen: venta.origen,
     cliente: venta.cliente,
+    telefono: venta.telefono || '',
+    pedidoId: venta.pedidoId != null && venta.pedidoId !== '' ? String(venta.pedidoId) : '',
+    pagado: venta.pagado !== false,
     items,
     total,
   }
@@ -75,8 +78,9 @@ function agruparPorPeriodo(movimientos) {
   for (const mov of movimientos) {
     const { anio, mes } = parseFecha(mov.fecha)
     const key = `${anio}-${mes}`
-    const row = meses.get(key) || { anio, mes, total: 0 }
+    const row = meses.get(key) || { anio, mes, total: 0, items: [] }
     row.total += Number(mov.total) || 0
+    row.items.push(mov)
     meses.set(key, row)
   }
   const anios = new Map()
@@ -87,12 +91,37 @@ function agruparPorPeriodo(movimientos) {
     anios.set(mes.anio, row)
   }
   return [...anios.values()]
-    .map((row) => ({ ...row, meses: row.meses.sort((a, b) => b.mes - a.mes) }))
+    .map((row) => ({
+      ...row,
+      meses: row.meses
+        .map((mes) => ({ ...mes, items: [...(mes.items || [])] }))
+        .sort((a, b) => b.mes - a.mes),
+    }))
     .sort((a, b) => b.anio - a.anio)
 }
 
+function ventasPagas() {
+  return leerVentas().filter((venta) => venta.pagado !== false)
+}
+
+function cobrosCuentas() {
+  const data = leerJSON('famat_cuentas', [])
+  if (!Array.isArray(data)) return []
+  return data
+    .filter((mov) => mov.tipo === 'cobro')
+    .map((mov) => ({
+      id: mov.id,
+      fecha: mov.fecha,
+      cliente: mov.cliente,
+      telefono: mov.telefono || '',
+      total: Number(mov.monto) || 0,
+      origen: 'cobro',
+      pagado: true,
+    }))
+}
+
 export function periodosVentas() {
-  return agruparPorPeriodo(leerVentas())
+  return agruparPorPeriodo([...ventasPagas(), ...cobrosCuentas()])
 }
 
 export function periodosPerdidas() {
@@ -100,7 +129,7 @@ export function periodosPerdidas() {
 }
 
 export function totalVentas() {
-  return leerVentas().reduce((acc, item) => acc + item.total, 0)
+  return [...ventasPagas(), ...cobrosCuentas()].reduce((acc, item) => acc + (Number(item.total) || 0), 0)
 }
 
 export function totalPerdidas() {
@@ -110,6 +139,20 @@ export function totalPerdidas() {
 function idsAplicados() {
   const raw = leerJSON(KEY_APLICADOS, [])
   return new Set(Array.isArray(raw) ? raw.map(String) : [])
+}
+
+export function marcarVentaPagada({ pedidoId, cliente }) {
+  const ventas = leerVentas()
+  let cambio = false
+  const next = ventas.map((venta) => {
+    const mismoPedido = pedidoId != null && pedidoId !== '' && String(venta.pedidoId) === String(pedidoId)
+    const mismoCliente = cliente && !venta.pedidoId && venta.pagado === false && String(venta.cliente || '').trim() === String(cliente).trim()
+    if (!mismoPedido && !mismoCliente) return venta
+    cambio = true
+    return { ...venta, pagado: true }
+  })
+  if (cambio) guardarJSON(KEY_VENTAS, next)
+  return cambio
 }
 
 export function aplicarPedidosAlStock(pedidos) {
@@ -136,7 +179,7 @@ export function aplicarPedidosAlStock(pedidos) {
       })
       .filter((item) => item.slug && item.cantidad > 0)
     if (items.length) {
-      registrarVenta({ fecha: hoyISO(), origen: 'web', cliente: pedido.cliente, items })
+      registrarVenta({ fecha: hoyISO(), origen: 'web', cliente: pedido.cliente, telefono: pedido.telefono, pedidoId: pedido.id, pagado: false, items })
       for (const item of items) ajustarStock(item.slug, -item.cantidad)
     }
     aplicados.add(id)

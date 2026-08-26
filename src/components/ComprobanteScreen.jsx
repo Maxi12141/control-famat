@@ -77,7 +77,7 @@ export default function ComprobanteScreen({ pedidos, pedidoInicial, onCerrar }) 
 
   const total = totalLineas(lineas)
   const numeroVista = formatoNumero(empresa.puntoVenta, peekNumero(tipo))
-  const sinPrecio = tipo === 'factura' && lineas.some((item) => !Number(item.precio))
+  const sinPrecio = lineas.some((item) => !Number(item.precio))
 
   const docActual = () =>
     armarComprobante({
@@ -165,7 +165,7 @@ export default function ComprobanteScreen({ pedidos, pedidoInicial, onCerrar }) 
           <button type="button" className={tipo === 'remito' ? 'is-on' : ''} onClick={() => setTipo('remito')}>
             <IconInvoice size={18} />
             Remito
-            <small>Para entregar la mercadería</small>
+            <small>Precio unitario por litros e importe</small>
           </button>
         </div>
         <p className="comp__nro">Próximo número: {numeroVista}</p>
@@ -256,7 +256,7 @@ export default function ComprobanteScreen({ pedidos, pedidoInicial, onCerrar }) 
               <li key={item.id}>
                 <div>
                   <strong>{item.nombre}</strong>
-                  <p>{item.codigo ? `${item.codigo} · ` : ''}{item.unidad}</p>
+                  <p>{item.codigo ? `${item.codigo} · ` : ''}{dinero(item.precio)} por litro</p>
                 </div>
                 <label>
                   Cant.
@@ -269,25 +269,23 @@ export default function ComprobanteScreen({ pedidos, pedidoInicial, onCerrar }) 
                     onChange={(e) => setLinea(item.id, 'cantidad', e.target.value)}
                   />
                 </label>
-                {tipo === 'factura' ? (
-                  <label>
-                    Precio
-                    <input
-                      className="precio-input"
-                      type="number"
-                      min="0"
-                      step="1"
-                      value={item.precio || ''}
-                      onChange={(e) => setLinea(item.id, 'precio', e.target.value)}
-                    />
-                  </label>
-                ) : null}
-                {tipo === 'factura' ? <strong>{dinero(item.precio * item.cantidad)}</strong> : null}
+                <label>
+                  Precio unitario (por litros)
+                  <input
+                    className="precio-input"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={item.precio || ''}
+                    onChange={(e) => setLinea(item.id, 'precio', e.target.value)}
+                  />
+                </label>
+                <strong>{dinero(item.precio * item.cantidad)}</strong>
               </li>
             ))}
           </ul>
         )}
-        {tipo === 'factura' && lineas.length > 0 ? <p className="total-caja">Total: {dinero(total)}</p> : null}
+        {lineas.length > 0 ? <p className="total-caja">Total importe: {dinero(total)}</p> : null}
         {sinPrecio ? (
           <p className="pedido-error">Hay ítems sin precio. Completalos acá o cargalos en Productos.</p>
         ) : null}
@@ -404,11 +402,13 @@ export default function ComprobanteScreen({ pedidos, pedidoInicial, onCerrar }) 
               <ul>
                 {lineas.slice(0, 6).map((item) => (
                   <li key={item.id}>
-                    <span>{item.cantidad} {item.unidad} · {item.nombre}</span>
+                    <span>{item.cantidad} · {item.nombre}</span>
+                    <span>{dinero(item.precio * item.cantidad)}</span>
                   </li>
                 ))}
               </ul>
               {lineas.length > 6 ? <p className="vacio">+ {lineas.length - 6} ítems más</p> : null}
+              <p className="comp__hoja-total">TOTAL $ {dinero(total)}</p>
             </>
           )}
         </div>

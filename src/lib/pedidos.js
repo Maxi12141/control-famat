@@ -141,7 +141,7 @@ export async function guardarEstadoPedido(id, estado) {
   }
 }
 
-function telefonoWa(telefono) {
+export function telefonoWa(telefono) {
   const digits = String(telefono || '').replace(/\D/g, '')
   if (!digits) return ''
   if (digits.startsWith('54')) return digits

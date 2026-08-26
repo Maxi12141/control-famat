@@ -38,7 +38,7 @@ function onFotoError(event, slug) {
   }
   img.src = '/images/placeholder.svg'
 }
-import { cantidadMedia, dinero, etiquetaTipo, MESES, nombreLinea } from './lib/format.js'
+import { dinero, etiquetaTipo, hoyISO, MESES, nombreLinea } from './lib/format.js'
 import {
   cargarPedidos,
   cantidadItem,
@@ -59,6 +59,7 @@ import { ajustarStock, conteoStock, esAlerta, sinStock, stockDe } from './lib/st
 import {
   aplicarPedidosAlStock,
   guardarVentaLocal,
+  marcarVentaPagada,
   periodosPerdidas,
   periodosVentas,
   PROVEEDORES,
@@ -80,7 +81,7 @@ const NAV = [
   { id: 'pedidos', label: 'Pedidos', icon: IconOrders },
   { id: 'stock', label: 'Stock', icon: IconStock },
   { id: 'productos', label: 'Productos', icon: IconProducts },
-  { id: 'facturero', label: 'Facturero', icon: IconInvoice },
+  { id: 'facturero', label: 'Facturación', icon: IconInvoice },
   { id: 'cuentas', label: 'Cuentas', icon: IconMoney },
   { id: 'reposicion', label: 'Reposición', icon: IconReposicion },
   { id: 'importes', label: 'Importes', icon: IconMoney },
@@ -241,6 +242,7 @@ function PedidoCard({ pedido, abierto, guardando, onToggle, onEstado, onDocument
                         modo: 'pagado',
                         fecha: pedido.entrega,
                       })
+                      marcarVentaPagada({ pedidoId: pedido.id, cliente: pedido.cliente })
                       onCuentas?.()
                     }}
                   >
@@ -849,69 +851,212 @@ function ProductosView({ productos, onCambio }) {
   )
 }
 
+function filaFacturaVacia() {
+  return {
+    id: `f_${Math.random().toString(36).slice(2, 10)}`,
+    codigo: '',
+    slug: '',
+    nombre: '',
+    cantidad: '',
+    precio: 0,
+  }
+}
+
+function precioPorLitroDe(slug) {
+  const precios = precioDe(slug)
+  return precios.venta || precios.costo || 0
+}
+
 function FactureroView({ productos, onGuardar }) {
-  const [query, setQuery] = useState('')
-  const [cantidad, setCantidad] = useState('1')
-  const [elegido, setElegido] = useState(null)
-  const [cliente, setCliente] = useState('')
+  const [nombre, setNombre] = useState('')
+  const [apellido, setApellido] = useState('')
+  const [direccion, setDireccion] = useState('')
+  const [telefono, setTelefono] = useState('')
+  const [fecha, setFecha] = useState(hoyISO())
+  const [entidad, setEntidad] = useState('')
   const [recibido, setRecibido] = useState('')
   const [cobro, setCobro] = useState('pagado')
-  const [lineas, setLineas] = useState([])
+  const [lineas, setLineas] = useState(() => Array.from({ length: 12 }, filaFacturaVacia))
+  const [sugerencias, setSugerencias] = useState({ id: '', items: [] })
   const [error, setError] = useState('')
-  const sugeridos = buscarProductos(query, productos).slice(0, 8)
-  const qty = cantidadMedia(Number(String(cantidad).replace(',', '.')) || 1)
-  const precio = elegido ? precioDe(elegido.slug).venta : 0
-  const total = lineas.reduce((acc, item) => acc + item.precio * item.cantidad, 0)
+  const filasOk = lineas.filter((fila) => fila.slug && Number(fila.cantidad) > 0)
+  const total = filasOk.reduce((acc, fila) => acc + Number(fila.precio || 0) * Number(fila.cantidad || 0), 0)
   const plata = Number(String(recibido).replace(',', '.')) || 0
   const vuelto = plata - total
+  const cliente = [nombre, apellido].map((parte) => parte.trim()).filter(Boolean).join(' ')
 
-  const agregar = (producto, extra = qty) => {
-    const venta = precioDe(producto.slug).venta
-    if (!venta) {
-      setError('Ese producto no tiene precio de venta. Cargalo en Productos.')
+  const aplicarCodigo = (id, codigo, elegido) => {
+    const texto = String(codigo || '').trim()
+    if (!texto) {
+      setLineas((lista) => lista.map((fila) => (fila.id === id ? { ...filaFacturaVacia(), id } : fila)))
+      setSugerencias({ id: '', items: [] })
+      setError('')
       return
     }
-    setError('')
-    setLineas((lista) =>
-      lista.find((item) => item.slug === producto.slug)
-        ? lista.map((item) => (item.slug === producto.slug ? { ...item, cantidad: cantidadMedia(item.cantidad + extra) } : item))
-        : [...lista, { slug: producto.slug, nombre: producto.nombre, codigo: producto.codigo, cantidad: extra, precio: venta }],
-    )
-    setQuery('')
-    setCantidad('1')
-    setElegido(null)
+    const hits = elegido ? [elegido] : buscarProductos(texto, productos)
+    const exactos = hits.filter((item) => item.codigo.toLowerCase() === texto.toLowerCase())
+    const prod = elegido || exactos[0] || (hits.length === 1 ? hits[0] : null)
+    if (!prod) {
+      setLineas((lista) => lista.map((fila) => (
+        fila.id === id ? { ...fila, codigo: texto, slug: '', nombre: '', precio: 0 } : fila
+      )))
+      setSugerencias({ id, items: hits.slice(0, 8) })
+      setError(hits.length ? '' : 'No hay un producto con ese código.')
+      return
+    }
+    const precio = precioPorLitroDe(prod.slug)
+    setError(precio ? '' : 'Ese producto no tiene precio. Cargalo en Productos.')
+    setLineas((lista) => {
+      const next = lista.map((fila) => (
+        fila.id === id
+          ? { ...fila, codigo: prod.codigo, slug: prod.slug, nombre: prod.nombre, precio }
+          : fila
+      ))
+      return next.some((fila) => !fila.slug) ? next : [...next, filaFacturaVacia()]
+    })
+    setSugerencias({ id: '', items: [] })
+    window.setTimeout(() => document.querySelector(`[data-fact-l="${id}"]`)?.focus(), 0)
   }
 
-  const agregarActual = () => {
-    const first = buscarProductos(query, productos)[0]
-    if (first && (first.codigo.toLowerCase() === query.trim().toLowerCase() || sugeridos.length === 1)) {
-      agregar(first)
-      return
-    }
-    if (elegido) {
-      agregar(elegido)
-      return
-    }
-    setError('Elegí un producto de la lista o escribí el código.')
+  const setLitros = (id, valor) => {
+    const n = Math.max(0, Number(String(valor).replace(',', '.')) || 0)
+    setLineas((lista) => lista.map((fila) => (
+      fila.id === id ? { ...fila, cantidad: valor === '' ? '' : n } : fila
+    )))
   }
 
-  const setCant = (slug, valor) => {
-    if (valor < 0.5) {
-      setLineas((lista) => lista.filter((item) => item.slug !== slug))
-      return
-    }
-    setLineas((lista) => lista.map((item) => (item.slug === slug ? { ...item, cantidad: cantidadMedia(valor) } : item)))
+  const limpiarFila = (id) => {
+    setLineas((lista) => lista.map((fila) => (fila.id === id ? { ...filaFacturaVacia(), id } : fila)))
+    setSugerencias({ id: '', items: [] })
   }
 
   return (
     <>
-      <h1>Facturero</h1>
-      <p className="dash-sub">Buscá por código o nombre, poné cuánto se llevan y marcá si pagó o se lo lleva fiado. El importe se carga igual; en Cuentas queda si debe.</p>
-      <article className="panel">
-        <label className="ajustes-panel">
-          Cliente {cobro === 'fiado' ? '(obligatorio si es fiado)' : '(opcional)'}
-          <input value={cliente} onChange={(e) => setCliente(e.target.value)} placeholder="Nombre de quien compra" />
-        </label>
+      <h1>Facturación</h1>
+      <p className="dash-sub">Poné el código: aparece el producto y el precio. Solo cargás los litros.</p>
+      <article className="panel fact-panel">
+        <div className="fact-banner">FAMAT</div>
+        <p className="fact-cli-tit">DATOS DEL CLIENTE</p>
+        <div className="fact-cli">
+          <label>Nombre<input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre" /></label>
+          <label>Apellido<input value={apellido} onChange={(e) => setApellido(e.target.value)} placeholder="Apellido" /></label>
+          <label>Dirección<input value={direccion} onChange={(e) => setDireccion(e.target.value)} /></label>
+          <label>Teléfono<input value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder="Para avisar si debe" /></label>
+          <label>Fecha<input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} /></label>
+          <label>Entidad<input value={entidad} onChange={(e) => setEntidad(e.target.value)} /></label>
+        </div>
+        {cliente ? <p className="fact-cliente-ok">Cliente: {cliente}</p> : null}
+        <div className="fact-titulo">FACTURA DE COMPRA</div>
+        <div className="fact-wrap">
+          <table className="fact-planilla">
+            <thead>
+              <tr>
+                <th>Código</th>
+                <th>Artículo(s)</th>
+                <th>Cantidad</th>
+                <th>Precio</th>
+                <th>Total</th>
+                <th className="fact-planilla__x"> </th>
+              </tr>
+            </thead>
+            <tbody>
+              {lineas.map((fila) => (
+                <tr key={fila.id}>
+                  <td className="fact-planilla__cod">
+                    <input
+                      value={fila.codigo}
+                      autoComplete="off"
+                      spellCheck={false}
+                      placeholder="Cód."
+                      aria-label="Código"
+                      onChange={(e) => {
+                        const v = e.target.value
+                        setLineas((lista) => lista.map((row) => (row.id === fila.id ? { ...row, codigo: v } : row)))
+                        setSugerencias({ id: fila.id, items: buscarProductos(v, productos).slice(0, 8) })
+                      }}
+                      onBlur={(e) => {
+                        window.setTimeout(() => {
+                          const texto = e.target.value
+                          const hits = buscarProductos(texto, productos)
+                          const exactos = hits.filter((item) => item.codigo.toLowerCase() === String(texto || '').trim().toLowerCase())
+                          const prod = exactos[0] || (hits.length === 1 ? hits[0] : null)
+                          if (prod) aplicarCodigo(fila.id, texto, prod)
+                          else setSugerencias({ id: '', items: [] })
+                        }, 120)
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          aplicarCodigo(fila.id, fila.codigo)
+                        }
+                      }}
+                    />
+                    {sugerencias.id === fila.id && sugerencias.items.length ? (
+                      <div className="fact-sug">
+                        {sugerencias.items.map((item) => (
+                          <button
+                            key={item.slug}
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => aplicarCodigo(fila.id, item.codigo, item)}
+                          >
+                            <b>{item.codigo}</b>
+                            <span>{item.nombre}</span>
+                            <em>{dinero(precioPorLitroDe(item.slug))}</em>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </td>
+                  <td className="fact-planilla__nom">{fila.nombre || '—'}</td>
+                  <td>
+                    <input
+                      className="fact-planilla__num"
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      data-fact-l={fila.id}
+                      aria-label="Litros"
+                      value={fila.cantidad}
+                      disabled={!fila.slug}
+                      placeholder={fila.slug ? '0' : ' '}
+                      onChange={(e) => setLitros(fila.id, e.target.value)}
+                    />
+                  </td>
+                  <td className="fact-planilla__precio">{fila.slug ? dinero(fila.precio) : '$'}</td>
+                  <td className="fact-planilla__imp">{fila.slug && Number(fila.cantidad) ? dinero(fila.precio * Number(fila.cantidad)) : '$'}</td>
+                  <td>
+                    {fila.slug ? (
+                      <button type="button" className="fact-planilla__del" onClick={() => limpiarFila(fila.id)}>×</button>
+                    ) : null}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colSpan={3}>TOTAL</td>
+                <td />
+                <td className="fact-planilla__total">{dinero(total)}</td>
+                <td />
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        <div className="fact-pie">
+          {cobro === 'pagado' ? (
+            <label className="fact-abono">
+              Dinero abonó
+              <input type="number" min="0" value={recibido} onChange={(e) => setRecibido(e.target.value)} placeholder="0" />
+            </label>
+          ) : (
+            <p className="vacio">Queda anotado que {cliente || 'el cliente'} debe {dinero(total)}.</p>
+          )}
+          <div className={`fact-vuelto ${plata && vuelto < 0 ? 'is-falta' : ''}`}>
+            <span>{plata && vuelto < 0 ? 'Falta' : 'Vuelto'}</span>
+            <strong>{plata ? dinero(Math.abs(vuelto)) : '$'}</strong>
+          </div>
+        </div>
         <div className="comp__cobro">
           <p className="comp__label">¿Pagó o se lleva fiado?</p>
           <div className="comp__tipos">
@@ -925,91 +1070,56 @@ function FactureroView({ productos, onGuardar }) {
             </button>
           </div>
         </div>
-        <div className="caja-carga">
-          <label>
-            Código o nombre
-            <input
-              value={query}
-              onChange={(e) => { setQuery(e.target.value); setElegido(null) }}
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); agregarActual() } }}
-              placeholder="P014 o lavandina"
-            />
-          </label>
-          <label>
-            Cantidad
-            <input type="number" min="0.5" step="0.5" value={cantidad} onChange={(e) => setCantidad(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); agregarActual() } }} />
-          </label>
-          <div className="caja-carga__valor">
-            <span>{elegido ? elegido.nombre : 'Producto'}</span>
-            <strong>{elegido && precio ? dinero(precio * qty) : '—'}</strong>
-            <small>{elegido && precio ? `${dinero(precio)} c/u` : 'Elegí un ítem'}</small>
-          </div>
-          <button type="button" className="dash-btn dash-btn--navy" onClick={agregarActual}>Agregar</button>
-        </div>
-        {query
-          ? sugeridos.map((item) => (
-              <button
-                key={item.slug}
-                type="button"
-                className={`sugerido ${elegido?.slug === item.slug ? 'is-on' : ''}`}
-                onClick={() => { setElegido(item); setQuery(item.codigo) }}
-                onDoubleClick={() => agregar(item)}
-              >
-                {item.codigo} · {item.nombre} · {dinero(precioDe(item.slug).venta)}
-              </button>
-            ))
-          : null}
-        {lineas.map((item) => (
-          <div className="caja-linea" key={item.slug}>
-            <div>
-              <strong>{item.nombre}</strong>
-              <p>{item.codigo} · {dinero(item.precio)} c/u</p>
-            </div>
-            <div className="stock-edit__btns">
-              <button type="button" onClick={() => setCant(item.slug, item.cantidad - 0.5)}>−</button>
-              <input className="precio-input" type="number" min="0.5" step="0.5" value={item.cantidad} onChange={(e) => setCant(item.slug, Number(String(e.target.value).replace(',', '.')) || 0)} />
-              <button type="button" onClick={() => setCant(item.slug, item.cantidad + 0.5)}>+</button>
-            </div>
-            <strong>{dinero(item.precio * item.cantidad)}</strong>
-            <button type="button" className="prod-table__borrar" onClick={() => setLineas((lista) => lista.filter((row) => row.slug !== item.slug))}>Quitar</button>
-          </div>
-        ))}
-        <p className="total-caja">Total: {dinero(total)}</p>
-        {cobro === 'pagado' ? (
-          <div className="caja-vuelto">
-            <label>Plata que recibís<input type="number" min="0" value={recibido} onChange={(e) => setRecibido(e.target.value)} placeholder="0" /></label>
-            <div className={`caja-vuelto__dato ${plata && vuelto < 0 ? 'is-falta' : ''}`}>
-              <span>{plata && vuelto < 0 ? 'Falta' : 'Vuelto'}</span>
-              <strong>{plata ? dinero(Math.abs(vuelto)) : '—'}</strong>
-            </div>
-          </div>
-        ) : (
-          <p className="vacio">Queda anotado que {cliente.trim() || 'el cliente'} debe {dinero(total)} hasta que vuelva a pagar.</p>
-        )}
         {error ? <p className="gate__error">{error}</p> : null}
         <button
           type="button"
           className="dash-btn dash-btn--navy"
           onClick={() => {
-            if (!lineas.length) { setError('Agregá al menos un producto.'); return }
-            const nombre = String(cliente || '').trim()
-            if (cobro === 'fiado' && !nombre) {
-              setError('Si se lleva fiado, poné el nombre del cliente para saber quién debe.')
+            if (!filasOk.length) {
+              setError('Agregá al menos un producto.')
+              return
+            }
+            if (!nombre.trim() || !apellido.trim()) {
+              setError('Poné el nombre y el apellido del cliente.')
+              return
+            }
+            if (cobro === 'fiado' && !telefono.trim()) {
+              setError('Poné el teléfono para avisarle lo que debe.')
               return
             }
             if (cobro === 'pagado' && plata && vuelto < 0) {
               setError('Falta plata. Si se lo lleva y paga después, tocá Fiado.')
               return
             }
-            guardarVentaLocal({ origen: 'local', cliente: nombre, items: lineas })
-            if (nombre) {
-              registrarCargo({ cliente: nombre, total, modo: cobro })
-            }
-            setLineas([])
-            setCliente('')
+            const notas = [direccion && `Dir. ${direccion}`, telefono && `Tel. ${telefono}`, entidad && `Entidad ${entidad}`]
+              .filter(Boolean)
+              .join(' · ')
+            guardarVentaLocal({
+              origen: 'local',
+              cliente,
+              telefono,
+              fecha,
+              pagado: cobro === 'pagado',
+              items: filasOk.map((fila) => ({
+                slug: fila.slug,
+                nombre: fila.nombre,
+                codigo: fila.codigo,
+                cantidad: Number(fila.cantidad),
+                precio: fila.precio,
+              })),
+            })
+            registrarCargo({ cliente, telefono, total, modo: cobro, fecha, notas })
+            setLineas(Array.from({ length: 12 }, filaFacturaVacia))
+            setNombre('')
+            setApellido('')
+            setDireccion('')
+            setTelefono('')
+            setEntidad('')
+            setFecha(hoyISO())
             setRecibido('')
             setCobro('pagado')
             setError('')
+            setSugerencias({ id: '', items: [] })
             onGuardar()
           }}
         >
@@ -1065,7 +1175,7 @@ function ReposicionView({ items, onCambio }) {
   )
 }
 
-function PeriodosView({ titulo, subtitulo, total, anios, color }) {
+function PeriodosView({ titulo, subtitulo, total, anios, color, conClientes = false }) {
   const [abierto, setAbierto] = useState(new Date().getFullYear())
   return (
     <>
@@ -1077,7 +1187,7 @@ function PeriodosView({ titulo, subtitulo, total, anios, color }) {
       </article>
       {anios.length === 0 ? (
         <article className="panel">
-          <p className="vacio">Todavía no hay movimientos.</p>
+          <p className="vacio">{conClientes ? 'Todavía no hay cobros. Cuando alguien pague, aparece acá con nombre y apellido.' : 'Todavía no hay movimientos.'}</p>
         </article>
       ) : (
         anios.map((anio) => (
@@ -1089,9 +1199,21 @@ function PeriodosView({ titulo, subtitulo, total, anios, color }) {
             {abierto === anio.anio ? (
               <div>
                 {anio.meses.map((mes) => (
-                  <div className="mes-row" key={`${anio.anio}-${mes.mes}`}>
-                    <span>{MESES[mes.mes - 1]}</span>
-                    <strong>{dinero(mes.total)}</strong>
+                  <div className="mes-block" key={`${anio.anio}-${mes.mes}`}>
+                    <div className="mes-row">
+                      <span>{MESES[mes.mes - 1]}</span>
+                      <strong>{dinero(mes.total)}</strong>
+                    </div>
+                    {conClientes
+                      ? [...(mes.items || [])]
+                          .sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')))
+                          .map((item) => (
+                          <div className="importe-linea" key={item.id}>
+                            <span>{item.cliente?.trim() || 'Sin nombre'}</span>
+                            <strong>{dinero(item.total)}</strong>
+                          </div>
+                        ))
+                      : null}
                   </div>
                 ))}
               </div>
@@ -1314,7 +1436,7 @@ export default function DashboardApp({ role, onSalir }) {
             {vista === 'facturero' && <FactureroView productos={productos} onGuardar={refresh} />}
             {vista === 'cuentas' && <CuentasScreen tick={tick} />}
             {vista === 'reposicion' && <ReposicionView items={alertaItems} onCambio={refresh} />}
-            {vista === 'importes' && <PeriodosView titulo="Importes" subtitulo="Plata que entra de la página y del facturero" total={totalVentas()} anios={periodosVentas()} color="ok" />}
+            {vista === 'importes' && <PeriodosView titulo="Importes" subtitulo="Solo quienes pagaron, con nombre y apellido al lado del precio." total={totalVentas()} anios={periodosVentas()} color="ok" conClientes />}
             {vista === 'perdidas' && <PeriodosView titulo="Pérdidas" subtitulo="Gastos de reposición, agrupados por mes y año" total={totalPerdidas()} anios={periodosPerdidas()} color="bad" />}
             {vista === 'ajustes' && <AjustesView role={role} nombre={nombre} onNombre={setNombre} onSalir={onSalir} />}
           </div>

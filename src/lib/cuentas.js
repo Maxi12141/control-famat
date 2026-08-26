@@ -1,5 +1,5 @@
-import { hoyISO } from './format.js'
-import { cantidadItem, itemsPedido, productoDeItemPedido } from './pedidos.js'
+import { dinero, hoyISO } from './format.js'
+import { cantidadItem, itemsPedido, productoDeItemPedido, telefonoWa } from './pedidos.js'
 import { precioDe } from './precios.js'
 import { guardarJSON, leerJSON } from './storage.js'
 
@@ -86,12 +86,16 @@ export function resumenClientes() {
       vendido: 0,
       cobrado: 0,
       debe: 0,
+      tieneFiado: false,
     }
     if (mov.telefono) row.telefono = mov.telefono
     if (mov.tipo === 'cargo') {
       row.vendido += Number(mov.total) || 0
       if (mov.modo === 'pagado') row.cobrado += Number(mov.total) || 0
-      else row.debe += Number(mov.total) || 0
+      else {
+        row.debe += Number(mov.total) || 0
+        row.tieneFiado = true
+      }
     } else if (mov.tipo === 'cobro') {
       const pago = Number(mov.monto) || 0
       row.cobrado += pago
@@ -120,6 +124,17 @@ export function clientesConDeuda() {
   return resumenClientes().filter((row) => row.debe > 0.5)
 }
 
+export function clientesConFiado() {
+  return resumenClientes().filter((row) => row.tieneFiado)
+}
+
 export function etiquetaModo(modo) {
   return modo === 'fiado' ? 'Fiado' : 'Pagó'
+}
+
+export function linkWhatsAppDeuda(cliente, telefono, debe) {
+  const tel = telefonoWa(telefono)
+  if (tel.length < 8) return ''
+  const texto = `Hola ${cliente}, te escribimos de Famat. Quedás debiendo ${dinero(debe)}.`
+  return `https://wa.me/${tel}?text=${encodeURIComponent(texto)}`
 }
