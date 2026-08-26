@@ -251,41 +251,23 @@ export function armarComprobante({
   }
 }
 
-function filasRemito(doc) {
-  if (!doc.lineas.length) {
-    return '<tr><td colspan="4" style="padding:12px;color:#64748b;text-align:center">Sin ítems</td></tr>'
-  }
-  return doc.lineas
-    .map((item) => {
-      const detalle = `${item.codigo ? `${item.codigo} · ` : ''}${item.nombre}`
-      const importe = Number(item.precio || 0) * Number(item.cantidad || 0)
-      return `<tr>
-        <td class="num">${esc(item.cantidad)}</td>
-        <td>${esc(detalle)}</td>
-        <td class="num">${esc(montoAR(item.precio))}</td>
-        <td class="num">${esc(montoAR(importe))}</td>
-      </tr>`
-    })
-    .join('')
-}
-
-function filasFacturaB(doc) {
+function filasLineas(doc, { unidad = false, minFilas = 18 } = {}) {
   const items = (doc.lineas || []).filter(Boolean)
-  if (!items.length) {
-    return '<tr><td colspan="4" class="vacio">Sin ítems</td></tr>'
-  }
-  return items
-    .map((item) => {
-      const detalle = `${item.codigo ? `${item.codigo} · ` : ''}${item.nombre}${item.unidad ? ` (${item.unidad})` : ''}`
-      const importe = Number(item.precio || 0) * Number(item.cantidad || 0)
-      return `<tr class="item">
+  const filas = items.map((item) => {
+    const detalle = `${item.codigo ? `${item.codigo} · ` : ''}${item.nombre}${unidad && item.unidad ? ` (${item.unidad})` : ''}`
+    const importe = Number(item.precio || 0) * Number(item.cantidad || 0)
+    return `<tr class="item">
         <td class="cant">${esc(item.cantidad)}</td>
         <td class="desc">${esc(detalle)}</td>
         <td class="num">${esc(montoAR(item.precio))}</td>
         <td class="num">${esc(montoAR(importe))}</td>
       </tr>`
-    })
-    .join('')
+  })
+  if (!filas.length) filas.push('<tr><td colspan="4" class="vacio">Sin ítems</td></tr>')
+  while (filas.length < minFilas) {
+    filas.push('<tr class="blank"><td class="cant"></td><td class="desc"></td><td class="num"></td><td class="num"></td></tr>')
+  }
+  return filas.join('')
 }
 
 function htmlShell(titulo, css, cuerpo) {
@@ -322,10 +304,15 @@ function htmlRemito(doc) {
     .caja small{color:#475569;font-size:12px}
     .cli{display:grid;grid-template-columns:1fr 1fr;gap:8px 18px;margin-bottom:16px;font-size:13px}
     .cli b{color:#0b3a56}
-    table{width:100%;border-collapse:collapse;font-size:13px}
-    th{background:#0b3a56;color:#fff;text-align:left;padding:6px 10px;font-weight:700}
+    table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:12.5px}
+    col.cant{width:12mm}
+    col.desc{width:auto}
+    col.pu,col.imp{width:28mm}
+    th{background:#0b3a56;color:#fff;text-align:left;padding:5px 8px;font-weight:700}
+    th.cant,td.cant{text-align:center;width:12mm}
     th.num,td.num{text-align:right;white-space:nowrap}
-    td{border-bottom:1px solid #e2e8f0;padding:4px 10px;vertical-align:middle;line-height:1.25}
+    td{border-bottom:1px solid #e2e8f0;padding:3px 8px;vertical-align:middle;line-height:1.2;height:18px}
+    tr.blank td{height:18px;padding:0 8px}
     tfoot td{background:#0b3a56;color:#fff;font-weight:800;border-bottom:0}
     .notas{margin-top:14px;font-size:12px;color:#334155}
     .firmas{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:48px}
@@ -356,15 +343,16 @@ function htmlRemito(doc) {
       <p><b>Entrega:</b> ${esc(doc.pago || '—')}</p>
     </div>
     <table>
+      <colgroup><col class="cant"><col class="desc"><col class="pu"><col class="imp"></colgroup>
       <thead>
         <tr>
-          <th>Cant.</th>
+          <th class="cant">Cant.</th>
           <th>Detalle</th>
-          <th class="num">Precio unitario (por litros)</th>
+          <th class="num">P. unitario</th>
           <th class="num">Importe</th>
         </tr>
       </thead>
-      <tbody>${filasRemito(doc)}</tbody>
+      <tbody>${filasLineas(doc, { minFilas: 16 })}</tbody>
       <tfoot>
         <tr>
           <td colspan="3">TOTAL</td>
@@ -413,22 +401,24 @@ function htmlFacturaB(doc) {
     .checks{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;font-size:11px}
     .chk{display:inline-block;width:11px;height:11px;border:1.2px solid #111;margin-right:4px;vertical-align:-1px;position:relative}
     .chk.on:after{content:"×";position:absolute;inset:-4px 0 0;text-align:center;font-size:14px;font-weight:800;line-height:14px}
-    .cuerpo{flex:1;display:flex;min-height:118mm}
+    .cuerpo{flex:1;display:flex;min-height:0}
     .lado{writing-mode:vertical-rl;transform:rotate(180deg);font-size:8px;font-weight:700;letter-spacing:.12em;padding:10px 3px;border-right:1.4px solid #111;display:grid;place-items:center;white-space:nowrap}
-    .tabla-box{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
-    table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:11px;background:#fff;flex:0 0 auto}
-    th{background:#eee8e0;color:#000;border:0;border-bottom:1.5px solid #000;border-right:1px solid #111;padding:5px 6px;font-size:10.5px;font-weight:800;letter-spacing:.04em;text-align:center}
-    td{border:0;border-right:1px solid #c9c3ba;border-bottom:1px dotted #c9c3ba;background:#fff;color:#000;padding:3px 7px;vertical-align:middle;line-height:1.25}
+    .tabla-box{flex:1;min-width:0;display:flex;flex-direction:column}
+    table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:11px;background:#fff;height:auto}
+    th{background:#eee8e0;color:#000;border:0;border-bottom:1.5px solid #000;border-right:1px solid #111;padding:4px 5px;font-size:10px;font-weight:800;letter-spacing:.04em;text-align:center}
+    td{border:0;border-right:1px solid #c9c3ba;border-bottom:1px dotted #c9c3ba;background:#fff;color:#000;padding:2px 6px;vertical-align:middle;line-height:1.15;height:16px}
+    tr.item td{height:16px;padding:2px 6px}
+    tr.blank td{height:16px;padding:0 6px}
     th:last-child,td:last-child{border-right:0}
-    td.vacio{text-align:center;color:#666;padding:10px;height:auto;border-bottom:0}
-    td.cant{text-align:center;width:14%}
+    td.vacio{text-align:center;color:#666;padding:8px;height:auto;border-bottom:0}
+    td.cant,th.cant{text-align:center;width:12mm}
     td.desc{text-align:left}
     td.num,th.num{text-align:right;white-space:nowrap}
-    col.cant{width:14%}
-    col.desc{width:50%}
-    col.pu,col.imp{width:18%}
-    .resto{flex:1 1 auto;min-height:24px;border-top:0;position:relative;background:repeating-linear-gradient(to bottom,#fff 0 17px,#d8d3cb 17px 18px)}
-    .resto:before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(#c9c3ba,#c9c3ba) 14% 0/1px 100% no-repeat,linear-gradient(#c9c3ba,#c9c3ba) 64% 0/1px 100% no-repeat,linear-gradient(#c9c3ba,#c9c3ba) 82% 0/1px 100% no-repeat}
+    col.cant{width:12mm}
+    col.desc{width:auto}
+    col.pu,col.imp{width:28mm}
+    .resto{flex:1 1 auto;min-height:8px;border-top:0;position:relative;background:repeating-linear-gradient(to bottom,#fff 0 15px,#d8d3cb 15px 16px)}
+    .resto:before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(#c9c3ba,#c9c3ba) 12mm 0/1px 100% no-repeat,linear-gradient(#c9c3ba,#c9c3ba) calc(100% - 56mm) 0/1px 100% no-repeat,linear-gradient(#c9c3ba,#c9c3ba) calc(100% - 28mm) 0/1px 100% no-repeat}
     .pie{border-top:1.6px solid #111;padding:8px 12px 10px}
     .ley{font-size:9.5px;font-style:italic;margin-bottom:8px}
     .pie-row{display:grid;grid-template-columns:1fr 58mm;gap:12px;align-items:end}
@@ -514,7 +504,7 @@ function htmlFacturaB(doc) {
               <th class="num">IMPORTE</th>
             </tr>
           </thead>
-          <tbody>${filasFacturaB(doc)}</tbody>
+          <tbody>${filasLineas(doc, { unidad: true, minFilas: 22 })}</tbody>
         </table>
         <div class="resto" aria-hidden="true"></div>
       </div>
@@ -644,10 +634,7 @@ export async function descargarPdf(doc) {
         clon.documentElement.style.background = '#fff'
         clon.body.style.background = '#fff'
         const factura = clon.querySelector('.fb')
-        if (factura) {
-          factura.style.minHeight = '277mm'
-          if (factura.scrollHeight < 1040) factura.style.height = '277mm'
-        }
+        if (factura) factura.style.minHeight = '277mm'
       },
     })
     if (!canvas.width || !canvas.height) {

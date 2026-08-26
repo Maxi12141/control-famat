@@ -1128,7 +1128,7 @@ function FactureroView({ productos, onGuardar }) {
   }
 
   return (
-    <>
+    <div className="fact-page">
       <h1>Facturación</h1>
       <p className="dash-sub">{verPrecios ? 'Poné el código: aparece el producto y el precio. Cargás litros, kilos o unidades según el producto.' : 'Poné el código: aparece el producto. Cargás litros, kilos o unidades según el producto.'}</p>
       <article className="panel fact-panel">
@@ -1150,11 +1150,23 @@ function FactureroView({ productos, onGuardar }) {
         <div className="fact-titulo">FACTURA DE COMPRA</div>
         <div className="fact-wrap">
           <table className="fact-planilla">
+            <colgroup>
+              <col className="fact-col-cod" />
+              <col className="fact-col-nom" />
+              <col className="fact-col-cant" />
+              {verPrecios ? (
+                <>
+                  <col className="fact-col-pre" />
+                  <col className="fact-col-imp" />
+                </>
+              ) : null}
+              <col className="fact-col-x" />
+            </colgroup>
             <thead>
               <tr>
                 <th>Código</th>
                 <th>Artículo(s)</th>
-                <th>Cantidad</th>
+                <th>Cant.</th>
                 {verPrecios ? (
                   <>
                     <th>Precio</th>
@@ -1215,7 +1227,7 @@ function FactureroView({ productos, onGuardar }) {
                     ) : null}
                   </td>
                   <td className="fact-planilla__nom">{fila.nombre || '—'}</td>
-                  <td>
+                  <td className="fact-planilla__cant">
                     <input
                       className="fact-planilla__num"
                       type="number"
@@ -1411,7 +1423,7 @@ function FactureroView({ productos, onGuardar }) {
           {cobro === 'fiado' ? 'Anotar fiado' : 'Guardar importe'}
         </button>
       </article>
-    </>
+    </div>
   )
 }
 
