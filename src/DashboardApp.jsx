@@ -56,7 +56,7 @@ import {
   unidadItem,
 } from './lib/pedidos.js'
 import { aumentarPrecios, aplicarPorcentajeACobro, cobroDesdeVenta, guardarPrecio, guardarPreciosLote, parsearCodigos, parsearListadoPrecios, precioCobroDe, precioDe } from './lib/precios.js'
-import { ajustarStock, conteoStock, esAlerta, etiquetaUnidad, formatoStock, pasoStock, sinStock, stockDe, UMBRAL, unidadDeTipo } from './lib/stock.js'
+import { ajustarStock, conteoStock, esAlerta, etiquetaUnidad, formatoStock, pasoStock, setMinimoAlerta, sinStock, stockDe, umbralAlerta, unidadDeTipo } from './lib/stock.js'
 import {
   aplicarPedidosAlStock,
   guardarVentaLocal,
@@ -452,12 +452,30 @@ function StockKpis({ conteo }) {
 
 function StockView({ items, total, busqueda, onBusqueda, onCambio, conteo }) {
   const [filtroTipo, setFiltroTipo] = useState('')
+  const [minimos, setMinimos] = useState({})
   const visibles = filtroTipo ? items.filter((item) => item.tipo === filtroTipo) : items
+  const valorMin = (item) => minimos[item.slug] ?? String(umbralAlerta(item.tipo, item.slug))
+  const guardarMinimo = (item, raw) => {
+    const texto = String(raw ?? '').trim().replace(',', '.')
+    if (texto === '') {
+      setMinimos((mapa) => {
+        const next = { ...mapa }
+        delete next[item.slug]
+        return next
+      })
+      return
+    }
+    const n = Number(texto)
+    if (!Number.isFinite(n) || n < 0) return
+    setMinimoAlerta(item.slug, n)
+    setMinimos((mapa) => ({ ...mapa, [item.slug]: String(n) }))
+    onCambio()
+  }
   return (
     <>
       <StockKpis conteo={conteo} />
       <p className="dash-sub stock-minimos">
-        Alerta cuando baja de {UMBRAL.producto} u (producto), {UMBRAL.liquido} L (líquido) o {UMBRAL.granel} kg (granel).
+        En cada producto poné el mínimo. Si el stock llega a ese número o menos, aparece en Alerta.
       </p>
       <div className="filtro-tipos">
         {FILTROS_TIPO.map((item) => (
@@ -488,6 +506,29 @@ function StockView({ items, total, busqueda, onBusqueda, onCambio, conteo }) {
               </div>
               <div className="stock-edit__meta">
                 <span className={`pill ${stock <= 0 ? 'pill--alert' : esAlerta(item.slug, item.tipo) ? 'pill--warn' : 'pill--ok'}`}>{formatoStock(stock, item.tipo)}</span>
+                <label className="stock-min">
+                  Mín. alerta
+                  <span className="stock-min__row">
+                    <input
+                      type="number"
+                      min="0"
+                      step={paso}
+                      value={valorMin(item)}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        setMinimos((mapa) => ({ ...mapa, [item.slug]: v }))
+                        const n = Number(String(v).replace(',', '.'))
+                        if (v.trim() === '' || !Number.isFinite(n) || n < 0) return
+                        setMinimoAlerta(item.slug, n)
+                        onCambio()
+                      }}
+                      onBlur={(e) => guardarMinimo(item, e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+                      aria-label={`Mínimo de alerta de ${item.nombre} en ${etiquetaUnidad(item.tipo)}`}
+                    />
+                    <small>{unidadDeTipo(item.tipo)}</small>
+                  </span>
+                </label>
                 <div className="stock-edit__btns">
                   <button type="button" onClick={() => { ajustarStock(item.slug, -paso); onCambio() }}>−</button>
                   <button type="button" onClick={() => { ajustarStock(item.slug, paso); onCambio() }}>+</button>
@@ -1908,7 +1949,7 @@ export default function DashboardApp({ role, onSalir }) {
                             <span>
                               <b>{item.codigo}</b> {item.nombre}
                             </span>
-                            <strong>{sinStock(item.slug) ? 'Sin stock' : `Quedan ${formatoStock(stockDe(item.slug), item.tipo)}`}</strong>
+                            <strong>{sinStock(item.slug) ? 'Sin stock' : `Quedan ${formatoStock(stockDe(item.slug), item.tipo)} · mín. ${formatoStock(umbralAlerta(item.tipo, item.slug), item.tipo)}`}</strong>
                           </li>
                         ))}
                       </ul>

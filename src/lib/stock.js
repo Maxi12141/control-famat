@@ -1,9 +1,15 @@
 import { guardarJSON, leerJSON } from './storage.js'
 
 const KEY = 'famat_stock'
+const KEY_MIN = 'famat_stock_min'
 
 function leer() {
   const data = leerJSON(KEY, {})
+  return data && typeof data === 'object' ? data : {}
+}
+
+function leerMinimos() {
+  const data = leerJSON(KEY_MIN, {})
   return data && typeof data === 'object' ? data : {}
 }
 
@@ -29,10 +35,23 @@ export const UMBRAL = {
   granel: 5,
 }
 
-export function umbralAlerta(tipo) {
+export function umbralAlerta(tipo, slug) {
+  if (slug) {
+    const custom = leerMinimos()[slug]
+    if (typeof custom === 'number' && Number.isFinite(custom) && custom >= 0) return custom
+  }
   if (tipo === 'liquido') return UMBRAL.liquido
   if (tipo === 'granel') return UMBRAL.granel
   return UMBRAL.producto
+}
+
+export function setMinimoAlerta(slug, valor) {
+  const data = leerMinimos()
+  const n = Math.max(0, Math.round(Number(String(valor).replace(',', '.')) * 10) / 10)
+  if (!slug || !Number.isFinite(n)) return umbralAlerta('producto', slug)
+  data[slug] = n
+  guardarJSON(KEY_MIN, data)
+  return n
 }
 
 export function formatoStock(cantidad, tipo) {
@@ -60,7 +79,7 @@ export function ajustarStock(slug, delta) {
 
 export function esAlerta(slug, tipo) {
   const n = stockDe(slug)
-  return n > 0 && n <= umbralAlerta(tipo)
+  return n > 0 && n <= umbralAlerta(tipo, slug)
 }
 
 export function sinStock(slug) {
@@ -76,7 +95,7 @@ export function conteoStock(items) {
     const tipo = typeof item === 'string' ? 'producto' : item.tipo
     const n = stockDe(slug)
     if (n <= 0) sin += 1
-    else if (n <= umbralAlerta(tipo)) alerta += 1
+    else if (n <= umbralAlerta(tipo, slug)) alerta += 1
     else normal += 1
   }
   return { normal, alerta, sin }
