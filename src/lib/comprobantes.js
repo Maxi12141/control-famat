@@ -209,7 +209,7 @@ function codigoBarras(doc, emp) {
 }
 
 function chk(on) {
-  return `<span class="chk${on ? ' on' : ''}"></span>`
+  return `<span class="chk${on ? ' on' : ''}">${on ? '×' : ''}</span>`
 }
 
 export function armarComprobante({
@@ -256,19 +256,15 @@ export function armarComprobante({
 
 function filasLineas(doc, { unidad = false, minFilas = 18 } = {}) {
   const items = (doc.lineas || []).filter(Boolean)
+  const celda = (texto, extra = '') => `<td class="${extra}"><span>${esc(texto)}</span></td>`
   const filas = items.map((item) => {
     const detalle = `${item.codigo ? `${item.codigo} · ` : ''}${item.nombre}${unidad && item.unidad ? ` (${item.unidad})` : ''}`
     const importe = Number(item.precio || 0) * Number(item.cantidad || 0)
-    return `<tr class="item">
-        <td class="cant">${esc(item.cantidad)}</td>
-        <td class="desc">${esc(detalle)}</td>
-        <td class="num">${esc(montoAR(item.precio))}</td>
-        <td class="num">${esc(montoAR(importe))}</td>
-      </tr>`
+    return `<tr class="item">${celda(item.cantidad, 'cant')}${celda(detalle, 'desc')}${celda(montoAR(item.precio), 'num')}${celda(montoAR(importe), 'num')}</tr>`
   })
-  if (!filas.length) filas.push('<tr><td colspan="4" class="vacio">Sin ítems</td></tr>')
+  if (!filas.length) filas.push('<tr><td colspan="4" class="vacio"><span>Sin ítems</span></td></tr>')
   while (filas.length < minFilas) {
-    filas.push('<tr class="blank"><td class="cant"></td><td class="desc"></td><td class="num"></td><td class="num"></td></tr>')
+    filas.push(`<tr class="blank">${celda(' ', 'cant')}${celda(' ', 'desc')}${celda(' ', 'num')}${celda(' ', 'num')}</tr>`)
   }
   return filas.join('')
 }
@@ -314,8 +310,8 @@ function htmlRemito(doc) {
     th{background:#0b3a56;color:#fff;text-align:left;padding:5px 8px;font-weight:700}
     th.cant,td.cant{text-align:center;width:12mm}
     th.num,td.num{text-align:right;white-space:nowrap}
-    td{border-bottom:1px solid #e2e8f0;padding:3px 8px;vertical-align:middle;line-height:1.2;height:18px}
-    tr.blank td{height:18px;padding:0 8px}
+    td{border-bottom:1px solid #e2e8f0;padding:6px 8px;vertical-align:middle;line-height:1.35;height:auto}
+    tr.blank td{height:22px;padding:6px 8px}
     tfoot td{background:#0b3a56;color:#fff;font-weight:800;border-bottom:0}
     .notas{margin-top:14px;font-size:12px;color:#334155}
     .firmas{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:48px}
@@ -397,30 +393,29 @@ function htmlFacturaB(doc) {
     .fecha b.anio{min-width:42px}
     .fisc{font-size:11px;line-height:1.45}
     .cli{padding:8px 12px 10px;border-bottom:1.6px solid #111;font-size:12px}
-    .fila{display:flex;align-items:baseline;gap:8px;margin:5px 0}
+    .fila{display:flex;align-items:center;gap:8px;margin:6px 0}
     .fila label{font-weight:700;white-space:nowrap}
-    .dots{border-bottom:1px dotted #111;flex:1;min-height:14px;padding:0 4px;font-weight:600;line-height:1.2}
+    .dots{border-bottom:1px dotted #111;flex:1;min-height:18px;padding:2px 4px 3px;font-weight:600;line-height:1.35}
     .dots.short{flex:0 0 38%}
     .checks{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;font-size:11px}
-    .chk{display:inline-block;width:11px;height:11px;border:1.2px solid #111;margin-right:4px;vertical-align:-1px;position:relative}
-    .chk.on:after{content:"×";position:absolute;inset:-4px 0 0;text-align:center;font-size:14px;font-weight:800;line-height:14px}
+    .chk{display:inline-flex;width:15px;height:15px;border:1.2px solid #111;margin-right:4px;align-items:center;justify-content:center;font-size:12px;font-weight:800;line-height:15px;vertical-align:middle;box-sizing:border-box}
     .cuerpo{flex:1;display:flex;min-height:0;overflow:hidden}
     .lado{writing-mode:vertical-rl;transform:rotate(180deg);font-size:8px;font-weight:700;letter-spacing:.12em;padding:10px 3px;border-right:1.4px solid #111;display:grid;place-items:center;white-space:nowrap}
-    .tabla-box{flex:1;min-width:0;display:flex;flex-direction:column}
-    table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:11px;background:#fff;height:auto}
-    th{background:#eee8e0;color:#000;border:0;border-bottom:1.5px solid #000;border-right:1px solid #111;padding:4px 5px;font-size:10px;font-weight:800;letter-spacing:.04em;text-align:center}
-    td{border:0;border-right:1px solid #c9c3ba;border-bottom:1px dotted #c9c3ba;background:#fff;color:#000;padding:2px 6px;vertical-align:middle;line-height:1.15;height:16px}
-    tr.item td{height:16px;padding:2px 6px}
-    tr.blank td{height:16px;padding:0 6px}
+    .tabla-box{flex:1;min-width:0;display:flex;flex-direction:column;overflow:visible}
+    table{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:12px;background:#fff;height:auto}
+    th{background:#eee8e0;color:#000;border:0;border-bottom:1.5px solid #000;border-right:1px solid #111;padding:7px 6px;font-size:10px;font-weight:800;letter-spacing:.04em;text-align:center;line-height:14px}
+    td{border:0;border-right:1px solid #c9c3ba;border-bottom:1px dotted #c9c3ba;background:#fff;color:#000;padding:0 6px;vertical-align:middle;overflow:visible}
+    td span{display:block;padding:5px 0 6px;line-height:18px;overflow:visible}
+    tr.blank td span{min-height:22px;padding:0;line-height:22px}
     th:last-child,td:last-child{border-right:0}
-    td.vacio{text-align:center;color:#666;padding:8px;height:auto;border-bottom:0}
+    td.vacio{text-align:center;color:#666;border-bottom:0}
     td.cant,th.cant{text-align:center;width:12mm}
     td.desc{text-align:left}
     td.num,th.num{text-align:right;white-space:nowrap}
     col.cant{width:12mm}
     col.desc{width:auto}
     col.pu,col.imp{width:28mm}
-    .resto{flex:1 1 auto;min-height:8px;border-top:0;position:relative;background:repeating-linear-gradient(to bottom,#fff 0 15px,#d8d3cb 15px 16px)}
+    .resto{flex:1 1 auto;min-height:8px;border-top:0;position:relative;background:repeating-linear-gradient(to bottom,#fff 0 21px,#d8d3cb 21px 22px)}
     .resto:before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(#c9c3ba,#c9c3ba) 12mm 0/1px 100% no-repeat,linear-gradient(#c9c3ba,#c9c3ba) calc(100% - 56mm) 0/1px 100% no-repeat,linear-gradient(#c9c3ba,#c9c3ba) calc(100% - 28mm) 0/1px 100% no-repeat}
     .pie{border-top:1.6px solid #111;padding:8px 12px 10px;flex:none;page-break-inside:avoid;break-inside:avoid}
     .ley{font-size:9.5px;font-style:italic;margin-bottom:8px}
@@ -508,7 +503,7 @@ function htmlFacturaB(doc) {
               <th class="num">IMPORTE</th>
             </tr>
           </thead>
-          <tbody>${filasLineas(doc, { unidad: true, minFilas: 14 })}</tbody>
+          <tbody>${filasLineas(doc, { unidad: true, minFilas: 12 })}</tbody>
         </table>
         <div class="resto" aria-hidden="true"></div>
       </div>
@@ -565,149 +560,463 @@ function nombreArchivoPdf(doc) {
   return `${tipo}-${nombre}-${fecha}.pdf`
 }
 
-function esperarIframeListo(iframe, target) {
-  return new Promise((resolve, reject) => {
-    let salio = false
-    const ok = () => {
-      if (salio) return
-      salio = true
-      resolve()
+function segmentosITF(digits) {
+  let data = String(digits || '').replace(/\D/g, '')
+  if (!data) return []
+  if (data.length % 2) data = `0${data}`
+  const n = 1
+  const w = 2.7
+  const segs = []
+  const bar = (ancho) => segs.push({ bar: true, w: ancho })
+  const gap = (ancho) => segs.push({ bar: false, w: ancho })
+  bar(n)
+  gap(n)
+  bar(n)
+  gap(n)
+  for (let i = 0; i < data.length; i += 2) {
+    const bars = ITF[data[i]] || ITF[0]
+    const spaces = ITF[data[i + 1]] || ITF[0]
+    for (let j = 0; j < 5; j += 1) {
+      bar(bars[j] === 'w' ? w : n)
+      gap(spaces[j] === 'w' ? w : n)
     }
-    const timer = window.setTimeout(() => {
-      if (salio) return
-      salio = true
-      reject(new Error('No se pudo armar el documento.'))
-    }, 10000)
-    iframe.onload = () => {
-      window.clearTimeout(timer)
-      window.setTimeout(ok, 120)
+  }
+  bar(w)
+  gap(n)
+  bar(n)
+  return segs
+}
+
+function dibujarITF(pdf, digits, x, y, maxW, alto) {
+  const segs = segmentosITF(digits)
+  if (!segs.length) return
+  const total = segs.reduce((acc, s) => acc + s.w, 0)
+  const k = maxW / total
+  let cx = x
+  pdf.setFillColor(0, 0, 0)
+  for (const s of segs) {
+    const ww = s.w * k
+    if (s.bar) pdf.rect(cx, y, Math.max(0.12, ww), alto, 'F')
+    cx += ww
+  }
+}
+
+function campoPunteado(pdf, label, valor, x, y, maxX) {
+  pdf.setFont('helvetica', 'bold')
+  pdf.setFontSize(9)
+  pdf.text(label, x, y)
+  const lx = x + pdf.getTextWidth(label) + 1.6
+  pdf.setDrawColor(30)
+  pdf.setLineWidth(0.2)
+  pdf.setLineDashPattern([0.45, 0.65], 0)
+  pdf.line(lx, y + 0.7, maxX, y + 0.7)
+  pdf.setLineDashPattern([], 0)
+  pdf.setDrawColor(0)
+  if (valor) {
+    pdf.setFont('helvetica', 'bold')
+    pdf.setFontSize(9)
+    const maxW = Math.max(6, maxX - lx - 1)
+    const lineas = pdf.splitTextToSize(String(valor), maxW)
+    pdf.text(lineas[0] || '', lx + 0.8, y)
+  }
+}
+
+function casilla(pdf, on, label, x, y) {
+  const s = 3.6
+  pdf.setLineWidth(0.32)
+  pdf.setDrawColor(0)
+  pdf.rect(x, y - s + 0.5, s, s)
+  if (on) {
+    pdf.setFont('helvetica', 'bold')
+    pdf.setFontSize(7.2)
+    pdf.text('X', x + s / 2, y - 0.55, { align: 'center' })
+  }
+  pdf.setFont('helvetica', 'normal')
+  pdf.setFontSize(8)
+  pdf.text(label, x + s + 1.2, y)
+  return x + s + 1.2 + pdf.getTextWidth(label) + 4.5
+}
+
+function dibujarFacturaBPdf(pdf, doc) {
+  const emp = emisorDe(doc.empresa)
+  const { dia, mes, anio } = partesFecha(doc.fecha)
+  const [pv, nro] = String(doc.numero || '').split('-')
+  const iva = doc.ivaCliente || 'cf'
+  const ctaCte = esCuentaCorriente(doc.pago)
+  const x0 = 10
+  const y0 = 10
+  const w = 190
+  const h = 277
+  const xFin = x0 + w
+
+  pdf.setDrawColor(0)
+  pdf.setLineWidth(0.45)
+  pdf.rect(x0, y0, w, h)
+
+  const headH = 46
+  const xLetra = x0 + 74
+  const wLetra = 24
+  const xDer = xLetra + wLetra
+  pdf.line(xLetra, y0, xLetra, y0 + headH)
+  pdf.line(xDer, y0, xDer, y0 + headH)
+  pdf.line(x0, y0 + headH, xFin, y0 + headH)
+
+  pdf.setFont('helvetica', 'bold')
+  pdf.setFontSize(16)
+  pdf.text(emp.razonSocial || 'Famat', x0 + 4, y0 + 9)
+  pdf.setFont('helvetica', 'normal')
+  pdf.setFontSize(8)
+  let ey = y0 + 14.5
+  const emi = [
+    emp.rubro,
+    emp.domicilio,
+    emp.telefono ? `Tel. ${emp.telefono}` : '',
+    emp.email ? `e-mail ${emp.email}` : '',
+    emp.web ? `Web ${emp.web}` : '',
+  ].filter(Boolean)
+  for (const linea of emi) {
+    const parts = pdf.splitTextToSize(linea, xLetra - x0 - 8)
+    pdf.text(parts[0] || '', x0 + 4, ey)
+    ey += 4
+  }
+  pdf.setFont('helvetica', 'bold')
+  pdf.setFontSize(8.5)
+  pdf.text(emp.condicionIva || '', x0 + 4, y0 + headH - 5)
+
+  const bx = xLetra + (wLetra - 16) / 2
+  const by = y0 + 6
+  pdf.setLineWidth(0.7)
+  pdf.rect(bx, by, 16, 15.5)
+  pdf.setFont('helvetica', 'bold')
+  pdf.setFontSize(22)
+  pdf.text('B', bx + 8, by + 12, { align: 'center' })
+  pdf.setLineWidth(0.4)
+  pdf.setFontSize(6.2)
+  const codW = 21
+  const codX = xLetra + (wLetra - codW) / 2
+  pdf.rect(codX, by + 17.5, codW, 5.8)
+  pdf.text('Código Nº 06', xLetra + wLetra / 2, by + 21.5, { align: 'center' })
+
+  pdf.setFont('helvetica', 'bold')
+  pdf.setFontSize(16)
+  pdf.text('FACTURA', xFin - 4, y0 + 10, { align: 'right' })
+  pdf.setFontSize(11)
+  pdf.text(`Nº ${pv || '0001'} - ${nro || '00000000'}`, xFin - 4, y0 + 17.5, { align: 'right' })
+
+  const fechaY = y0 + 21.5
+  const boxW = 10
+  const anioW = 14
+  pdf.setFontSize(7.5)
+  const cajas = [
+    [dia, boxW],
+    [mes, boxW],
+    [anio, anioW],
+  ]
+  const fechaAncho = boxW + 1.4 + boxW + 1.4 + anioW
+  let fx = xFin - 4 - fechaAncho
+  pdf.text('FECHA', fx - 13, fechaY + 4.8)
+  for (const [txt, bw] of cajas) {
+    pdf.rect(fx, fechaY, bw, 6.6)
+    pdf.setFont('helvetica', 'bold')
+    pdf.setFontSize(9)
+    pdf.text(String(txt || ''), fx + bw / 2, fechaY + 4.7, { align: 'center' })
+    fx += bw + 1.4
+  }
+
+  pdf.setFont('helvetica', 'normal')
+  pdf.setFontSize(8.5)
+  let fy = y0 + 33.5
+  pdf.text(`C.U.I.T.: ${emp.cuit || ''}`, xDer + 4, fy)
+  fy += 4.3
+  pdf.text(`INGR. BRUTOS: ${emp.ingresosBrutos || ''}`, xDer + 4, fy)
+  fy += 4.3
+  pdf.text(`INICIO DE ACT.: ${emp.inicioActividades || ''}`, xDer + 4, fy)
+
+  const cy = y0 + headH
+  campoPunteado(pdf, 'Señor/es:', doc.cliente, x0 + 4, cy + 8, xFin - 4)
+  campoPunteado(pdf, 'Dirección:', doc.domicilio, x0 + 4, cy + 16.5, x0 + 118)
+  campoPunteado(pdf, 'Localidad:', doc.localidad, x0 + 121, cy + 16.5, xFin - 4)
+
+  pdf.setFont('helvetica', 'bold')
+  pdf.setFontSize(9)
+  pdf.text('I.V.A.', x0 + 4, cy + 25)
+  let ix = x0 + 16
+  ix = casilla(pdf, iva === 'cf', 'Cons. Final', ix, cy + 25)
+  ix = casilla(pdf, iva === 'exento', 'Exento.', ix, cy + 25)
+  ix = casilla(pdf, iva === 'mono', 'Monotributo', ix, cy + 25)
+  casilla(pdf, iva === 'noresp', 'No Resp.', ix, cy + 25)
+  campoPunteado(pdf, 'C.U.I.T.:', doc.cuitCliente, x0 + 128, cy + 25, xFin - 4)
+
+  pdf.setFont('helvetica', 'bold')
+  pdf.setFontSize(9)
+  pdf.text('Condiciones de Venta', x0 + 4, cy + 33.5)
+  let vx = x0 + 4 + pdf.getTextWidth('Condiciones de Venta') + 4
+  vx = casilla(pdf, !ctaCte, 'Contado', vx, cy + 33.5)
+  casilla(pdf, ctaCte, 'Cta. Cte.', vx, cy + 33.5)
+  campoPunteado(pdf, 'Remito Nº', doc.remitoNro, x0 + 128, cy + 33.5, xFin - 4)
+
+  const clientBottom = cy + 40
+  pdf.setLineWidth(0.45)
+  pdf.line(x0, clientBottom, xFin, clientBottom)
+
+  const pieH = 50
+  const pieY = y0 + h - pieH
+  pdf.line(x0, pieY, xFin, pieY)
+
+  const ladoW = 7
+  pdf.line(x0 + ladoW, clientBottom, x0 + ladoW, pieY)
+  pdf.setFont('helvetica', 'bold')
+  pdf.setFontSize(6)
+  const ladoTxt = 'ORIGINAL BLANCO / DUPLICADO COLOR'
+  const ladoLen = pdf.getTextWidth(ladoTxt)
+  pdf.text(ladoTxt, x0 + 2.7, (clientBottom + pieY) / 2 + ladoLen / 2, { angle: 90 })
+
+  const tx = x0 + ladoW
+  const tw = w - ladoW
+  const cols = [
+    { key: 'cant', w: 16, title: 'CANT.', align: 'center' },
+    { key: 'desc', w: tw - 80, title: 'DESCRIPCIÓN', align: 'left' },
+    { key: 'pu', w: 32, title: 'P. UNITARIO', align: 'right' },
+    { key: 'imp', w: 32, title: 'IMPORTE', align: 'right' },
+  ]
+  const th = 7.4
+  pdf.setFillColor(238, 232, 224)
+  pdf.rect(tx, clientBottom, tw, th, 'F')
+  pdf.setDrawColor(0)
+  pdf.setLineWidth(0.35)
+  pdf.rect(tx, clientBottom, tw, th)
+  pdf.setFont('helvetica', 'bold')
+  pdf.setFontSize(7.5)
+  let colX = tx
+  for (const col of cols) {
+    const px = col.align === 'center' ? colX + col.w / 2 : col.align === 'right' ? colX + col.w - 2 : colX + 2
+    pdf.text(col.title, px, clientBottom + 4.9, { align: col.align })
+    colX += col.w
+    if (colX < tx + tw - 0.2) pdf.line(colX, clientBottom, colX, pieY)
+  }
+
+  const items = (doc.lineas || []).filter((item) => String(item?.nombre || '').trim())
+  const espacio = pieY - (clientBottom + th)
+  const minFilas = 12
+  const filas = Math.max(items.length, minFilas)
+  const rowH = Math.min(8.4, espacio / filas)
+  pdf.setFont('helvetica', 'normal')
+  pdf.setFontSize(10)
+  for (let i = 0; i < filas; i += 1) {
+    const ry = clientBottom + th + i * rowH
+    pdf.setDrawColor(170)
+    pdf.setLineWidth(0.18)
+    pdf.setLineDashPattern([0.55, 0.7], 0)
+    pdf.line(tx, ry + rowH, tx + tw, ry + rowH)
+    pdf.setLineDashPattern([], 0)
+    pdf.setDrawColor(0)
+    const item = items[i]
+    if (!item) continue
+    const detalle = `${item.codigo ? `${item.codigo} - ` : ''}${item.nombre}${item.unidad ? ` (${item.unidad})` : ''}`
+    const importe = Number(item.precio || 0) * Number(item.cantidad || 0)
+    const vals = [String(item.cantidad ?? ''), detalle, montoAR(item.precio), montoAR(importe)]
+    let vx2 = tx
+    const base = ry + rowH * 0.62
+    pdf.setFont('helvetica', 'normal')
+    pdf.setFontSize(10)
+    pdf.setTextColor(0)
+    for (let c = 0; c < cols.length; c += 1) {
+      const col = cols[c]
+      let txt = vals[c]
+      if (col.key === 'desc') {
+        const parts = pdf.splitTextToSize(txt, col.w - 3.5)
+        txt = parts[0] || ''
+      }
+      const px = col.align === 'center' ? vx2 + col.w / 2 : col.align === 'right' ? vx2 + col.w - 2 : vx2 + 2
+      pdf.text(txt, px, base, { align: col.align })
+      vx2 += col.w
     }
-    if (target?.readyState === 'complete') {
-      window.clearTimeout(timer)
-      window.setTimeout(ok, 120)
+  }
+
+  pdf.setFont('helvetica', 'italic')
+  pdf.setFontSize(7.4)
+  pdf.setTextColor(0)
+  pdf.text('147 "Teléfono Gratuito CABA, Área de Defensa y Protección al Consumidor".', x0 + 4, pieY + 6.5)
+
+  const barras = codigoBarras(doc, emp)
+  dibujarITF(pdf, barras, x0 + 4, pieY + 10, 112, 16)
+  pdf.setFont('helvetica', 'normal')
+  pdf.setFontSize(7.4)
+  pdf.text(barras, x0 + 60, pieY + 30.5, { align: 'center' })
+
+  const totX = xFin - 58
+  const totY = pieY + 10
+  pdf.setLineWidth(0.5)
+  pdf.rect(totX, totY, 54, 18)
+  pdf.setFont('helvetica', 'bold')
+  pdf.setFontSize(11)
+  pdf.text('TOTAL $', totX + 3.5, totY + 11.5)
+  pdf.setFontSize(13)
+  pdf.text(montoAR(doc.total), totX + 50.5, totY + 11.5, { align: 'right' })
+
+  if (doc.notas) {
+    pdf.setFont('helvetica', 'normal')
+    pdf.setFontSize(8)
+    const notas = pdf.splitTextToSize(String(doc.notas), w - 10)
+    pdf.text(notas[0] || '', x0 + 4, pieY + 38)
+  }
+}
+
+function dibujarRemitoPdf(pdf, doc) {
+  const emp = emisorDe(doc.empresa)
+  const x0 = 14
+  const y0 = 14
+  const w = 182
+  pdf.setDrawColor(11, 58, 86)
+  pdf.setLineWidth(0.5)
+  pdf.rect(x0, y0, w, 269)
+
+  pdf.setFont('helvetica', 'bold')
+  pdf.setTextColor(11, 58, 86)
+  pdf.setFontSize(22)
+  pdf.text(emp.razonSocial || 'Famat', x0 + 8, y0 + 14)
+  pdf.setFont('helvetica', 'normal')
+  pdf.setFontSize(9)
+  pdf.setTextColor(40)
+  let ey = y0 + 20
+  for (const linea of [emp.domicilio, emp.cuit ? `CUIT ${emp.cuit}` : '', emp.condicionIva, emp.telefono ? `Tel. ${emp.telefono}` : ''].filter(Boolean)) {
+    pdf.text(linea, x0 + 8, ey)
+    ey += 4.5
+  }
+
+  const cajaX = x0 + w - 68
+  pdf.setDrawColor(11, 58, 86)
+  pdf.rect(cajaX, y0 + 6, 58, 28)
+  pdf.setFont('helvetica', 'bold')
+  pdf.setFontSize(9)
+  pdf.setTextColor(15, 118, 110)
+  pdf.text('REMITO', cajaX + 29, y0 + 13, { align: 'center' })
+  pdf.setTextColor(11, 58, 86)
+  pdf.setFontSize(14)
+  pdf.text(`Nº ${doc.numero || ''}`, cajaX + 29, y0 + 21, { align: 'center' })
+  pdf.setFont('helvetica', 'normal')
+  pdf.setFontSize(9)
+  pdf.setTextColor(60)
+  pdf.text(`Fecha ${doc.fecha || ''}`, cajaX + 29, y0 + 28, { align: 'center' })
+
+  pdf.setDrawColor(11, 58, 86)
+  pdf.setLineWidth(0.6)
+  pdf.line(x0 + 8, y0 + 40, x0 + w - 8, y0 + 40)
+
+  pdf.setFont('helvetica', 'bold')
+  pdf.setFontSize(10)
+  pdf.setTextColor(11, 58, 86)
+  pdf.text('Cliente:', x0 + 8, y0 + 48)
+  pdf.setFont('helvetica', 'normal')
+  pdf.setTextColor(20)
+  pdf.text(String(doc.cliente || '—'), x0 + 26, y0 + 48)
+  pdf.setFont('helvetica', 'bold')
+  pdf.setTextColor(11, 58, 86)
+  pdf.text('Teléfono:', x0 + 100, y0 + 48)
+  pdf.setFont('helvetica', 'normal')
+  pdf.setTextColor(20)
+  pdf.text(String(doc.telefono || '—'), x0 + 122, y0 + 48)
+  pdf.setFont('helvetica', 'bold')
+  pdf.setTextColor(11, 58, 86)
+  pdf.text('Domicilio:', x0 + 8, y0 + 55)
+  pdf.setFont('helvetica', 'normal')
+  pdf.setTextColor(20)
+  pdf.text(String(doc.domicilio || '—'), x0 + 30, y0 + 55)
+
+  const tx = x0 + 8
+  const tw = w - 16
+  const ty = y0 + 62
+  const cols = [
+    { w: 18, title: 'Cant.', align: 'center' },
+    { w: tw - 82, title: 'Detalle', align: 'left' },
+    { w: 32, title: 'P. unitario', align: 'right' },
+    { w: 32, title: 'Importe', align: 'right' },
+  ]
+  pdf.setFillColor(11, 58, 86)
+  pdf.rect(tx, ty, tw, 8, 'F')
+  pdf.setFont('helvetica', 'bold')
+  pdf.setFontSize(9)
+  pdf.setTextColor(255)
+  let cx = tx
+  for (const col of cols) {
+    const px = col.align === 'center' ? cx + col.w / 2 : col.align === 'right' ? cx + col.w - 2 : cx + 2
+    pdf.text(col.title, px, ty + 5.4, { align: col.align })
+    cx += col.w
+  }
+
+  const items = (doc.lineas || []).filter(Boolean)
+  const rowH = 8
+  pdf.setTextColor(0)
+  pdf.setFont('helvetica', 'normal')
+  pdf.setFontSize(9)
+  const filas = Math.max(items.length, 12)
+  for (let i = 0; i < filas; i += 1) {
+    const ry = ty + 8 + i * rowH
+    pdf.setDrawColor(226, 232, 240)
+    pdf.setLineWidth(0.2)
+    pdf.line(tx, ry + rowH, tx + tw, ry + rowH)
+    const item = items[i]
+    if (!item) continue
+    const detalle = `${item.codigo ? `${item.codigo} · ` : ''}${item.nombre || ''}`
+    const importe = Number(item.precio || 0) * Number(item.cantidad || 0)
+    const vals = [String(item.cantidad ?? ''), detalle, montoAR(item.precio), montoAR(importe)]
+    let vx = tx
+    pdf.setTextColor(20)
+    for (let c = 0; c < cols.length; c += 1) {
+      const col = cols[c]
+      let txt = vals[c]
+      if (c === 1) txt = (pdf.splitTextToSize(txt, col.w - 3)[0] || '')
+      const px = col.align === 'center' ? vx + col.w / 2 : col.align === 'right' ? vx + col.w - 2 : vx + 2
+      pdf.text(txt, px, ry + 5.5, { align: col.align })
+      vx += col.w
     }
+  }
+
+  const footY = ty + 8 + filas * rowH
+  pdf.setFillColor(11, 58, 86)
+  pdf.rect(tx, footY, tw, 9, 'F')
+  pdf.setTextColor(255)
+  pdf.setFont('helvetica', 'bold')
+  pdf.setFontSize(10)
+  pdf.text('TOTAL', tx + 3, footY + 6)
+  pdf.text(montoAR(doc.total), tx + tw - 3, footY + 6, { align: 'right' })
+
+  pdf.setTextColor(40)
+  pdf.setFont('helvetica', 'normal')
+  pdf.setFontSize(9)
+  if (doc.notas) pdf.text(`Observaciones: ${doc.notas}`, tx, footY + 16)
+  pdf.setDrawColor(51, 65, 85)
+  pdf.line(tx + 8, footY + 42, tx + 70, footY + 42)
+  pdf.line(tx + tw - 70, footY + 42, tx + tw - 8, footY + 42)
+  pdf.setFontSize(8)
+  pdf.text('Entregó', tx + 39, footY + 47, { align: 'center' })
+  pdf.text('Recibí conforme', tx + tw - 39, footY + 47, { align: 'center' })
+}
+
+export async function armarPdfBlob(doc) {
+  const { jsPDF } = await import('jspdf')
+  const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
+  pdf.setProperties({
+    title: `${etiquetaTipoDoc(doc.tipo)} ${doc.numero}`,
+    subject: doc.cliente || '',
+    creator: 'Control Famat',
   })
+  if (doc.tipo === 'remito') dibujarRemitoPdf(pdf, doc)
+  else dibujarFacturaBPdf(pdf, doc)
+  return pdf.output('blob')
 }
 
 export async function descargarPdf(doc) {
-  const html = htmlComprobante(doc)
-  const iframe = document.createElement('iframe')
-  iframe.setAttribute('aria-hidden', 'true')
-  iframe.setAttribute('title', 'Vista para PDF')
-  iframe.style.position = 'fixed'
-  iframe.style.left = '-10000px'
-  iframe.style.top = '0'
-  iframe.style.width = '794px'
-  iframe.style.height = '1123px'
-  iframe.style.border = '0'
-  iframe.style.background = '#fff'
-  iframe.style.pointerEvents = 'none'
-  iframe.style.zIndex = '-1'
-  document.body.appendChild(iframe)
-  const win = iframe.contentWindow
-  const target = iframe.contentDocument
-  if (!win || !target) {
-    iframe.remove()
-    throw new Error('No se pudo generar el PDF.')
-  }
-  const listo = esperarIframeListo(iframe, target)
-  target.open()
-  target.write(html)
-  target.close()
-  try {
-    await listo
-    const hoja = target.querySelector('.fb, .hoja') || target.body
-    const esFactura = Boolean(target.querySelector('.fb'))
-    if (esFactura) {
-      hoja.style.width = '190mm'
-      hoja.style.height = '277mm'
-      hoja.style.minHeight = '277mm'
-      hoja.style.maxHeight = '277mm'
-      hoja.style.overflow = 'hidden'
-      iframe.style.height = '1123px'
-    } else {
-      const alto = Math.max(hoja.scrollHeight, hoja.offsetHeight, target.documentElement.scrollHeight, 1123)
-      iframe.style.height = `${alto + 24}px`
-    }
-    await new Promise((resolve) => window.setTimeout(resolve, 180))
-    const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
-      import('html2canvas'),
-      import('jspdf'),
-    ])
-    const canvas = await html2canvas(hoja, {
-      scale: 2.5,
-      useCORS: true,
-      backgroundColor: '#ffffff',
-      logging: false,
-      imageTimeout: 2000,
-      scrollX: 0,
-      scrollY: 0,
-      width: hoja.scrollWidth,
-      height: esFactura ? hoja.offsetHeight : hoja.scrollHeight,
-      windowWidth: 794,
-      windowHeight: esFactura ? 1123 : Math.max(1123, hoja.scrollHeight),
-      onclone: (clon) => {
-        clon.documentElement.style.background = '#fff'
-        clon.body.style.background = '#fff'
-        const factura = clon.querySelector('.fb')
-        if (factura) {
-          factura.style.width = '190mm'
-          factura.style.height = '277mm'
-          factura.style.minHeight = '277mm'
-          factura.style.maxHeight = '277mm'
-          factura.style.overflow = 'hidden'
-        }
-      },
-    })
-    if (!canvas.width || !canvas.height) {
-      throw new Error('No se pudo capturar el documento para el PDF.')
-    }
-    const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
-    const pageW = pdf.internal.pageSize.getWidth()
-    const pageH = pdf.internal.pageSize.getHeight()
-    const imgData = canvas.toDataURL('image/jpeg', 0.97)
-    pdf.setProperties({
-      title: `${etiquetaTipoDoc(doc.tipo)} ${doc.numero}`,
-      subject: doc.cliente || '',
-      creator: 'Control Famat',
-    })
-    if (esFactura) {
-      const margen = 8
-      const maxW = pageW - margen * 2
-      const maxH = pageH - margen * 2
-      const ratio = Math.min(maxW / canvas.width, maxH / canvas.height)
-      const imgW = canvas.width * ratio
-      const imgH = canvas.height * ratio
-      const x = (pageW - imgW) / 2
-      const y = (pageH - imgH) / 2
-      pdf.addImage(imgData, 'JPEG', x, y, imgW, imgH, undefined, 'FAST')
-    } else {
-      const imgW = pageW
-      const imgH = (canvas.height * imgW) / canvas.width
-      let leftover = imgH
-      let y = 0
-      pdf.addImage(imgData, 'JPEG', 0, y, imgW, imgH)
-      leftover -= pageH
-      while (leftover > 1) {
-        y -= pageH
-        pdf.addPage()
-        pdf.addImage(imgData, 'JPEG', 0, y, imgW, imgH)
-        leftover -= pageH
-      }
-    }
-    const blob = pdf.output('blob')
-    const url = URL.createObjectURL(blob)
-    const enlace = document.createElement('a')
-    enlace.href = url
-    enlace.download = nombreArchivoPdf(doc)
-    enlace.rel = 'noopener'
-    document.body.appendChild(enlace)
-    enlace.click()
-    enlace.remove()
-    window.setTimeout(() => URL.revokeObjectURL(url), 1500)
-  } finally {
-    iframe.remove()
-  }
+  const blob = await armarPdfBlob(doc)
+  const url = URL.createObjectURL(blob)
+  const enlace = document.createElement('a')
+  enlace.href = url
+  enlace.download = nombreArchivoPdf(doc)
+  enlace.rel = 'noopener'
+  document.body.appendChild(enlace)
+  enlace.click()
+  enlace.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1500)
 }
 
 export function imprimirHtml(doc) {
