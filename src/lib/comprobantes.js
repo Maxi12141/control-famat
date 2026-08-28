@@ -226,25 +226,28 @@ export function armarComprobante({
   empresa,
   ivaCliente,
   cuitCliente,
+  remitoNro,
 }) {
   const datos = emisorDe(empresa)
   const nro = peekNumero(tipo)
   const numero = formatoNumero(datos.puntoVenta, nro)
-  const items = (lineas || []).filter((item) => item.nombre && Number(item.cantidad) > 0)
+  const items = (lineas || []).filter((item) => String(item.nombre || '').trim() && Number(item.cantidad) > 0)
+  const dePedido = tipo === 'remito' ? pedido : null
   return {
     tipo,
     numero,
     nro,
     fecha: fechaHumana(fecha || hoyISO()),
-    cliente: cliente || pedido?.cliente || '',
-    telefono: telefono || pedido?.telefono || '',
+    cliente: cliente || dePedido?.cliente || '',
+    telefono: telefono || dePedido?.telefono || '',
     domicilio: domicilio || '',
     localidad: localidad || '',
-    pago: pago || pedido?.metodoPago || '',
-    notas: notas || pedido?.notas || '',
+    pago: pago || (tipo === 'remito' ? dePedido?.metodoPago || '' : ''),
+    notas: notas || (tipo === 'remito' ? dePedido?.notas || '' : ''),
     ivaCliente: ivaCliente || 'cf',
     cuitCliente: cuitCliente || '',
-    pedidoId: pedido?.id ? String(pedido.id) : '',
+    remitoNro: String(remitoNro || '').trim(),
+    pedidoId: tipo === 'remito' && dePedido?.id ? String(dePedido.id) : '',
     lineas: items,
     total: totalLineas(items),
     empresa: datos,
@@ -376,8 +379,8 @@ function htmlFacturaB(doc) {
   const barras = codigoBarras(doc, emp)
   const css = `
     @page{size:A4;margin:8mm}
-    html,body{font-family:Arial,Helvetica,sans-serif;color:#000;background:#fff!important;color-scheme:only light}
-    .fb{width:190mm;max-width:100%;margin:0 auto;border:1.6px solid #000;background:#fff;color:#000;display:flex;flex-direction:column;min-height:277mm}
+    html,body{font-family:Arial,Helvetica,sans-serif;color:#000;background:#fff!important;color-scheme:only light;width:210mm;height:297mm;overflow:hidden}
+    .fb{width:190mm;height:277mm;min-height:277mm;max-height:277mm;margin:10mm auto;border:1.6px solid #000;background:#fff;color:#000;display:flex;flex-direction:column;overflow:hidden;page-break-inside:avoid}
     .head{display:grid;grid-template-columns:1fr 78px 1fr;min-height:42mm;border-bottom:1.6px solid #111}
     .emi{padding:8px 10px 8px 12px;font-size:11px;line-height:1.35}
     .emi .nom{font-size:18px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px}
@@ -394,14 +397,14 @@ function htmlFacturaB(doc) {
     .fecha b.anio{min-width:42px}
     .fisc{font-size:11px;line-height:1.45}
     .cli{padding:8px 12px 10px;border-bottom:1.6px solid #111;font-size:12px}
-    .fila{display:flex;align-items:flex-end;gap:8px;margin:5px 0}
+    .fila{display:flex;align-items:baseline;gap:8px;margin:5px 0}
     .fila label{font-weight:700;white-space:nowrap}
-    .dots{border-bottom:1px dotted #111;flex:1;min-height:16px;padding:0 4px 1px;font-weight:600}
+    .dots{border-bottom:1px dotted #111;flex:1;min-height:14px;padding:0 4px;font-weight:600;line-height:1.2}
     .dots.short{flex:0 0 38%}
     .checks{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;font-size:11px}
     .chk{display:inline-block;width:11px;height:11px;border:1.2px solid #111;margin-right:4px;vertical-align:-1px;position:relative}
     .chk.on:after{content:"×";position:absolute;inset:-4px 0 0;text-align:center;font-size:14px;font-weight:800;line-height:14px}
-    .cuerpo{flex:1;display:flex;min-height:0}
+    .cuerpo{flex:1;display:flex;min-height:0;overflow:hidden}
     .lado{writing-mode:vertical-rl;transform:rotate(180deg);font-size:8px;font-weight:700;letter-spacing:.12em;padding:10px 3px;border-right:1.4px solid #111;display:grid;place-items:center;white-space:nowrap}
     .tabla-box{flex:1;min-width:0;display:flex;flex-direction:column}
     table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:11px;background:#fff;height:auto}
@@ -419,7 +422,7 @@ function htmlFacturaB(doc) {
     col.pu,col.imp{width:28mm}
     .resto{flex:1 1 auto;min-height:8px;border-top:0;position:relative;background:repeating-linear-gradient(to bottom,#fff 0 15px,#d8d3cb 15px 16px)}
     .resto:before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(#c9c3ba,#c9c3ba) 12mm 0/1px 100% no-repeat,linear-gradient(#c9c3ba,#c9c3ba) calc(100% - 56mm) 0/1px 100% no-repeat,linear-gradient(#c9c3ba,#c9c3ba) calc(100% - 28mm) 0/1px 100% no-repeat}
-    .pie{border-top:1.6px solid #111;padding:8px 12px 10px}
+    .pie{border-top:1.6px solid #111;padding:8px 12px 10px;flex:none;page-break-inside:avoid;break-inside:avoid}
     .ley{font-size:9.5px;font-style:italic;margin-bottom:8px}
     .pie-row{display:grid;grid-template-columns:1fr 58mm;gap:12px;align-items:end}
     .barcode{width:100%;height:42px;display:block}
@@ -431,7 +434,8 @@ function htmlFacturaB(doc) {
     @media print{
       html,body,.fb{background:#fff!important;color:#000!important}
       body,.resto{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-      .fb{width:auto;min-height:277mm}
+      html,body{width:auto;height:auto;overflow:visible}
+      .fb{width:auto;height:277mm;min-height:277mm;max-height:277mm;overflow:hidden;margin:0}
     }
   `
   const cuerpo = `
@@ -488,7 +492,7 @@ function htmlFacturaB(doc) {
           <span>${chk(!ctaCte)}Contado</span>
           <span>${chk(ctaCte)}Cta. Cte.</span>
         </div>
-        <label>Remito Nº</label><span class="dots short">${esc(doc.pedidoId)}</span>
+        <label>Remito Nº</label><span class="dots short">${esc(doc.remitoNro)}</span>
       </div>
     </div>
     <div class="cuerpo">
@@ -504,7 +508,7 @@ function htmlFacturaB(doc) {
               <th class="num">IMPORTE</th>
             </tr>
           </thead>
-          <tbody>${filasLineas(doc, { unidad: true, minFilas: 22 })}</tbody>
+          <tbody>${filasLineas(doc, { unidad: true, minFilas: 14 })}</tbody>
         </table>
         <div class="resto" aria-hidden="true"></div>
       </div>
@@ -591,12 +595,12 @@ export async function descargarPdf(doc) {
   iframe.setAttribute('aria-hidden', 'true')
   iframe.setAttribute('title', 'Vista para PDF')
   iframe.style.position = 'fixed'
-  iframe.style.left = '0'
+  iframe.style.left = '-10000px'
   iframe.style.top = '0'
   iframe.style.width = '794px'
   iframe.style.height = '1123px'
   iframe.style.border = '0'
-  iframe.style.opacity = '0'
+  iframe.style.background = '#fff'
   iframe.style.pointerEvents = 'none'
   iframe.style.zIndex = '-1'
   document.body.appendChild(iframe)
@@ -613,28 +617,46 @@ export async function descargarPdf(doc) {
   try {
     await listo
     const hoja = target.querySelector('.fb, .hoja') || target.body
-    const alto = Math.max(hoja.scrollHeight, hoja.offsetHeight, target.documentElement.scrollHeight, 1123)
-    iframe.style.height = `${alto + 24}px`
-    await new Promise((resolve) => window.setTimeout(resolve, 60))
+    const esFactura = Boolean(target.querySelector('.fb'))
+    if (esFactura) {
+      hoja.style.width = '190mm'
+      hoja.style.height = '277mm'
+      hoja.style.minHeight = '277mm'
+      hoja.style.maxHeight = '277mm'
+      hoja.style.overflow = 'hidden'
+      iframe.style.height = '1123px'
+    } else {
+      const alto = Math.max(hoja.scrollHeight, hoja.offsetHeight, target.documentElement.scrollHeight, 1123)
+      iframe.style.height = `${alto + 24}px`
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 180))
     const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
       import('html2canvas'),
       import('jspdf'),
     ])
     const canvas = await html2canvas(hoja, {
-      scale: 2,
+      scale: 2.5,
       useCORS: true,
       backgroundColor: '#ffffff',
       logging: false,
       imageTimeout: 2000,
+      scrollX: 0,
+      scrollY: 0,
       width: hoja.scrollWidth,
-      height: hoja.scrollHeight,
-      windowWidth: hoja.scrollWidth,
-      windowHeight: hoja.scrollHeight,
+      height: esFactura ? hoja.offsetHeight : hoja.scrollHeight,
+      windowWidth: 794,
+      windowHeight: esFactura ? 1123 : Math.max(1123, hoja.scrollHeight),
       onclone: (clon) => {
         clon.documentElement.style.background = '#fff'
         clon.body.style.background = '#fff'
         const factura = clon.querySelector('.fb')
-        if (factura) factura.style.minHeight = '277mm'
+        if (factura) {
+          factura.style.width = '190mm'
+          factura.style.height = '277mm'
+          factura.style.minHeight = '277mm'
+          factura.style.maxHeight = '277mm'
+          factura.style.overflow = 'hidden'
+        }
       },
     })
     if (!canvas.width || !canvas.height) {
@@ -643,23 +665,35 @@ export async function descargarPdf(doc) {
     const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
     const pageW = pdf.internal.pageSize.getWidth()
     const pageH = pdf.internal.pageSize.getHeight()
-    const imgW = pageW
-    const imgH = (canvas.height * imgW) / canvas.width
-    const imgData = canvas.toDataURL('image/jpeg', 0.93)
+    const imgData = canvas.toDataURL('image/jpeg', 0.97)
     pdf.setProperties({
       title: `${etiquetaTipoDoc(doc.tipo)} ${doc.numero}`,
       subject: doc.cliente || '',
       creator: 'Control Famat',
     })
-    let leftover = imgH
-    let y = 0
-    pdf.addImage(imgData, 'JPEG', 0, y, imgW, imgH)
-    leftover -= pageH
-    while (leftover > 1) {
-      y -= pageH
-      pdf.addPage()
+    if (esFactura) {
+      const margen = 8
+      const maxW = pageW - margen * 2
+      const maxH = pageH - margen * 2
+      const ratio = Math.min(maxW / canvas.width, maxH / canvas.height)
+      const imgW = canvas.width * ratio
+      const imgH = canvas.height * ratio
+      const x = (pageW - imgW) / 2
+      const y = (pageH - imgH) / 2
+      pdf.addImage(imgData, 'JPEG', x, y, imgW, imgH, undefined, 'FAST')
+    } else {
+      const imgW = pageW
+      const imgH = (canvas.height * imgW) / canvas.width
+      let leftover = imgH
+      let y = 0
       pdf.addImage(imgData, 'JPEG', 0, y, imgW, imgH)
       leftover -= pageH
+      while (leftover > 1) {
+        y -= pageH
+        pdf.addPage()
+        pdf.addImage(imgData, 'JPEG', 0, y, imgW, imgH)
+        leftover -= pageH
+      }
     }
     const blob = pdf.output('blob')
     const url = URL.createObjectURL(blob)

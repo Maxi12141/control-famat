@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { IconClose, IconInvoice } from './icons.jsx'
+import { buscarProductos, listarProductos } from '../lib/catalog.js'
 import {
   IVA_CLIENTE,
   armarComprobante,
@@ -18,6 +19,7 @@ import {
 } from '../lib/comprobantes.js'
 import { dinero, etiquetaTipo, fechaHumana, hoyISO } from '../lib/format.js'
 import { usePanel } from '../lib/panel.jsx'
+import { precioCobroDe } from '../lib/precios.js'
 import { registrarCargo } from '../lib/cuentas.js'
 
 function pedidoLabel(pedido) {
@@ -26,21 +28,39 @@ function pedidoLabel(pedido) {
   return `${nombre} · pedido ${pedido.id}`
 }
 
+function lineaManual() {
+  return {
+    id: `l_${Math.random().toString(36).slice(2, 8)}`,
+    slug: '',
+    codigo: '',
+    nombre: '',
+    cantidad: '',
+    unidad: '',
+    tipo: '',
+    precio: '',
+  }
+}
+
+function renglonesVacios(n = 6) {
+  return Array.from({ length: n }, lineaManual)
+}
+
 export default function ComprobanteScreen({ pedidos, pedidoInicial, onCerrar }) {
   const { verPrecios } = usePanel()
   const [tipo, setTipo] = useState('factura')
-  const [pedidoId, setPedidoId] = useState(() => (pedidoInicial ? String(pedidoInicial.id) : ''))
+  const [pedidoId, setPedidoId] = useState('')
   const [cliente, setCliente] = useState('')
   const [telefono, setTelefono] = useState('')
   const [domicilio, setDomicilio] = useState('')
   const [localidad, setLocalidad] = useState('')
   const [ivaCliente, setIvaCliente] = useState('cf')
   const [cuitCliente, setCuitCliente] = useState('')
+  const [remitoNro, setRemitoNro] = useState('')
   const [fecha, setFecha] = useState(hoyISO())
   const [pago, setPago] = useState('')
   const [cobro, setCobro] = useState('pagado')
   const [notas, setNotas] = useState('')
-  const [lineas, setLineas] = useState([])
+  const [lineas, setLineas] = useState(() => renglonesVacios())
   const [empresa, setEmpresa] = useState(() => leerEmpresa())
   const [mostrarEmpresa, setMostrarEmpresa] = useState(false)
   const [aviso, setAviso] = useState('')
@@ -49,19 +69,43 @@ export default function ComprobanteScreen({ pedidos, pedidoInicial, onCerrar }) 
   const pedidoCargado = useRef('')
 
   const pedido = useMemo(
-    () => pedidos.find((item) => String(item.id) === String(pedidoId)) || null,
-    [pedidos, pedidoId],
+    () => (tipo === 'remito' ? pedidos.find((item) => String(item.id) === String(pedidoId)) || null : null),
+    [pedidos, pedidoId, tipo],
   )
 
-  useEffect(() => {
-    if (!pedidoId) {
-      pedidoCargado.current = ''
+  const elegirTipo = (next) => {
+    setTipo(next)
+    setError('')
+    setAviso('')
+    pedidoCargado.current = ''
+    if (next === 'factura') {
+      setPedidoId('')
       setCliente('')
       setTelefono('')
       setDomicilio('')
       setLocalidad('')
       setIvaCliente('cf')
       setCuitCliente('')
+      setRemitoNro('')
+      setPago('')
+      setCobro('pagado')
+      setNotas('')
+      setFecha(hoyISO())
+      setLineas(renglonesVacios())
+      return
+    }
+    setPedidoId(pedidoInicial ? String(pedidoInicial.id) : '')
+    if (!pedidoInicial) setLineas([])
+  }
+
+  useEffect(() => {
+    if (tipo !== 'remito') return
+    if (!pedidoId) {
+      pedidoCargado.current = ''
+      setCliente('')
+      setTelefono('')
+      setDomicilio('')
+      setLocalidad('')
       setPago('')
       setNotas('')
       setLineas([])
@@ -78,16 +122,17 @@ export default function ComprobanteScreen({ pedidos, pedidoInicial, onCerrar }) 
     setLineas(lineasDesdePedido(pedido))
     setError('')
     setAviso('')
-  }, [pedido, pedidoId])
+  }, [pedido, pedidoId, tipo])
 
-  const total = totalLineas(lineas)
+  const filasOk = lineas.filter((item) => String(item.nombre || '').trim() && Number(item.cantidad) > 0)
+  const total = totalLineas(filasOk)
   const numeroVista = formatoNumero(empresa.puntoVenta, peekNumero(tipo))
-  const sinPrecio = lineas.some((item) => !Number(item.precio))
+  const sinPrecio = filasOk.some((item) => !Number(item.precio))
 
   const docActual = () =>
     armarComprobante({
       tipo,
-      pedido,
+      pedido: tipo === 'remito' ? pedido : null,
       cliente,
       telefono,
       domicilio,
@@ -95,18 +140,27 @@ export default function ComprobanteScreen({ pedidos, pedidoInicial, onCerrar }) 
       fecha,
       pago: cobro === 'fiado' ? (pago || 'Fiado') : pago,
       notas,
-      lineas,
+      lineas: filasOk,
       empresa,
       ivaCliente,
       cuitCliente,
+      remitoNro,
     })
 
   const emitir = async (accion) => {
     if (ocupado) return
     setError('')
     setAviso('')
-    if (!lineas.length) {
-      setError('Elegí un pedido con objetos, o cargá al menos un producto.')
+    if (tipo === 'remito' && !pedido) {
+      setError('Elegí un pedido para armar el remito.')
+      return
+    }
+    if (!filasOk.length) {
+      setError(tipo === 'factura' ? 'Cargá al menos un artículo con cantidad.' : 'Elegí un pedido con objetos, o cargá al menos un producto.')
+      return
+    }
+    if (tipo === 'factura' && !cliente.trim()) {
+      setError('Poné el nombre del cliente (Señor/es).')
       return
     }
     guardarEmpresa(empresa)
@@ -120,12 +174,12 @@ export default function ComprobanteScreen({ pedidos, pedidoInicial, onCerrar }) 
         registrarCargo({
           cliente: doc.cliente,
           telefono: doc.telefono,
-          pedidoId: doc.pedidoId,
+          pedidoId: '',
           total: doc.total,
           modo: cobro,
           fecha,
           notas: doc.notas,
-          items: lineas.map((item) => ({
+          items: filasOk.map((item) => ({
             slug: item.slug,
             nombre: item.nombre,
             codigo: item.codigo,
@@ -148,7 +202,10 @@ export default function ComprobanteScreen({ pedidos, pedidoInicial, onCerrar }) 
   }
 
   const quitarObjeto = (id) => {
-    setLineas((lista) => lista.filter((item) => item.id !== id))
+    setLineas((lista) => {
+      const next = lista.filter((item) => item.id !== id)
+      return tipo === 'factura' && next.length === 0 ? renglonesVacios(1) : next
+    })
   }
 
   const etiquetaPrecio = (item) => {
@@ -161,12 +218,39 @@ export default function ComprobanteScreen({ pedidos, pedidoInicial, onCerrar }) 
     setLineas((lista) =>
       lista.map((item) => {
         if (item.id !== id) return item
-        if (campo === 'cantidad') return { ...item, cantidad: Math.max(0, Number(String(valor).replace(',', '.')) || 0) }
-        if (campo === 'precio') return { ...item, precio: Math.max(0, Number(String(valor).replace(',', '.')) || 0) }
+        if (campo === 'cantidad') return { ...item, cantidad: valor === '' ? '' : Math.max(0, Number(String(valor).replace(',', '.')) || 0) }
+        if (campo === 'precio') return { ...item, precio: valor === '' ? '' : Math.max(0, Number(String(valor).replace(',', '.')) || 0) }
+        if (campo === 'codigo') return { ...item, codigo: valor }
+        if (campo === 'nombre') return { ...item, nombre: valor }
         return item
       }),
     )
   }
+
+  const aplicarCodigo = (id, texto) => {
+    const q = String(texto || '').trim()
+    if (!q) return
+    const hits = buscarProductos(q, listarProductos())
+    const exactos = hits.filter((item) => item.codigo.toLowerCase() === q.toLowerCase())
+    const prod = exactos[0] || (hits.length === 1 ? hits[0] : null)
+    if (!prod) return
+    setLineas((lista) =>
+      lista.map((item) => (
+        item.id === id
+          ? {
+              ...item,
+              slug: prod.slug,
+              codigo: prod.codigo,
+              nombre: item.nombre || prod.nombre,
+              tipo: prod.tipo || item.tipo,
+              precio: item.precio === '' || item.precio == null ? (precioCobroDe(prod.slug) || '') : item.precio,
+            }
+          : item
+      )),
+    )
+  }
+
+  const ivaLabel = IVA_CLIENTE.find((op) => op.id === ivaCliente)?.label || 'Cons. Final'
 
   return (
     <div className="comp">
@@ -179,40 +263,48 @@ export default function ComprobanteScreen({ pedidos, pedidoInicial, onCerrar }) 
         </button>
       </div>
       <h1>Factura o remito</h1>
-      <p className="dash-sub">Armalo desde un pedido, revisalo y después imprimilo o descargalo. Ya no hace falta hacerlo a mano.</p>
+      <p className="dash-sub">
+        {tipo === 'factura'
+          ? 'La Factura B la completa el jefe a mano: cliente, IVA, renglones, precios y total. No se carga desde un pedido.'
+          : 'El remito se arma desde un pedido. Revisalo y después imprimilo o descargalo.'}
+      </p>
 
       <article className="panel">
         <p className="comp__label">Tipo de documento</p>
         <div className="comp__tipos">
-          <button type="button" className={tipo === 'factura' ? 'is-on' : ''} onClick={() => setTipo('factura')}>
+          <button type="button" className={tipo === 'factura' ? 'is-on' : ''} onClick={() => elegirTipo('factura')}>
             <IconInvoice size={18} />
             Factura B
-            <small>Modelo tipo B · con precios y total</small>
+            <small>Completá todos los datos a mano</small>
           </button>
-          <button type="button" className={tipo === 'remito' ? 'is-on' : ''} onClick={() => setTipo('remito')}>
+          <button type="button" className={tipo === 'remito' ? 'is-on' : ''} onClick={() => elegirTipo('remito')}>
             <IconInvoice size={18} />
             Remito
-            <small>Precio unitario por litros e importe</small>
+            <small>Sale del pedido, con precios e importe</small>
           </button>
         </div>
         <p className="comp__nro">Próximo número: {numeroVista}</p>
       </article>
 
       <article className="panel">
-        <label>
-          Pedido
-          <select value={pedidoId} onChange={(e) => setPedidoId(e.target.value)}>
-            <option value="">Elegí un pedido…</option>
-            {pedidos.map((item) => (
-              <option key={String(item.id)} value={String(item.id)}>
-                {pedidoLabel(item)}
-              </option>
-            ))}
-          </select>
-        </label>
+        {tipo === 'remito' ? (
+          <label>
+            Pedido
+            <select value={pedidoId} onChange={(e) => setPedidoId(e.target.value)}>
+              <option value="">Elegí un pedido…</option>
+              {pedidos.map((item) => (
+                <option key={String(item.id)} value={String(item.id)}>
+                  {pedidoLabel(item)}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <p className="comp__label">Datos de la factura</p>
+        )}
         <div className="comp__grid">
           <label>
-            Cliente
+            {tipo === 'factura' ? 'Señor/es' : 'Cliente'}
             <input value={cliente} onChange={(e) => setCliente(e.target.value)} placeholder="Nombre del cliente" />
           </label>
           <label>
@@ -241,6 +333,10 @@ export default function ComprobanteScreen({ pedidos, pedidoInicial, onCerrar }) 
                 CUIT del cliente
                 <input value={cuitCliente} onChange={(e) => setCuitCliente(e.target.value)} placeholder="Opcional" />
               </label>
+              <label>
+                Remito Nº
+                <input value={remitoNro} onChange={(e) => setRemitoNro(e.target.value)} placeholder="Si hay remito, el número" />
+              </label>
             </>
           ) : null}
           <label>
@@ -257,26 +353,91 @@ export default function ComprobanteScreen({ pedidos, pedidoInicial, onCerrar }) 
               <div className="comp__tipos">
                 <button type="button" className={cobro === 'pagado' ? 'is-on' : ''} onClick={() => setCobro('pagado')}>
                   Pagó
-                  <small>Dejó el dinero del precio</small>
+                  <small>Contado</small>
                 </button>
                 <button type="button" className={cobro === 'fiado' ? 'is-on' : ''} onClick={() => setCobro('fiado')}>
                   Fiado
-                  <small>Se lleva ahora y paga después</small>
+                  <small>Cta. Cte.</small>
                 </button>
               </div>
             </div>
           ) : null}
           <label>
             Observaciones
-            <input value={notas} onChange={(e) => setNotas(e.target.value)} placeholder="Notas del pedido" />
+            <input value={notas} onChange={(e) => setNotas(e.target.value)} placeholder={tipo === 'factura' ? 'Notas de la factura' : 'Notas del pedido'} />
           </label>
         </div>
       </article>
 
       <article className="panel">
-        <h2>Objetos</h2>
-        {lineas.length === 0 ? (
-          <p className="vacio">Elegí un pedido para cargar los productos. Si sacás todos, la factura queda vacía.</p>
+        <h2>{tipo === 'factura' ? 'Renglones de la factura' : 'Objetos'}</h2>
+        {tipo === 'remito' && lineas.length === 0 ? (
+          <p className="vacio">Elegí un pedido para cargar los productos.</p>
+        ) : tipo === 'factura' ? (
+          <>
+            <div className="comp__renglones">
+              <div className="comp__renglones-head">
+                <span>Cód.</span>
+                <span>Descripción</span>
+                <span>Cant.</span>
+                <span>P. unitario</span>
+                <span>Importe</span>
+                <span />
+              </div>
+              {lineas.map((item) => (
+                <div className="comp__renglon" key={item.id}>
+                  <label>
+                    <span className="comp__renglon-lab">Cód.</span>
+                    <input
+                      value={item.codigo}
+                      placeholder="Cód."
+                      onChange={(e) => setLinea(item.id, 'codigo', e.target.value)}
+                      onBlur={(e) => aplicarCodigo(item.id, e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    <span className="comp__renglon-lab">Descripción</span>
+                    <input
+                      value={item.nombre}
+                      placeholder="Artículo"
+                      onChange={(e) => setLinea(item.id, 'nombre', e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    <span className="comp__renglon-lab">Cant.</span>
+                    <input
+                      className="precio-input"
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      value={item.cantidad}
+                      onChange={(e) => setLinea(item.id, 'cantidad', e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    <span className="comp__renglon-lab">P. unitario</span>
+                    <input
+                      className="precio-input"
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={item.precio}
+                      onChange={(e) => setLinea(item.id, 'precio', e.target.value)}
+                    />
+                  </label>
+                  <strong className="comp__renglon-imp">
+                    {Number(item.cantidad) && Number(item.precio) ? dinero(item.precio * item.cantidad) : '$'}
+                  </strong>
+                  <button type="button" className="comp__sacar" aria-label="Sacar renglón" onClick={() => quitarObjeto(item.id)}>
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button type="button" className="dash-btn dash-btn--navy comp__agregar" onClick={() => setLineas((lista) => [...lista, lineaManual()])}>
+              Agregar renglón
+            </button>
+          </>
         ) : (
           <ul className="comp__items">
             {lineas.map((item) => (
@@ -322,9 +483,9 @@ export default function ComprobanteScreen({ pedidos, pedidoInicial, onCerrar }) 
             ))}
           </ul>
         )}
-        {lineas.length > 0 && verPrecios ? <p className="total-caja">Total importe: {dinero(total)}</p> : null}
+        {filasOk.length > 0 && verPrecios ? <p className="total-caja">Total importe: {dinero(total)}</p> : null}
         {sinPrecio && verPrecios ? (
-          <p className="pedido-error">Hay objetos sin precio. Completalos acá o cargalos en Productos.</p>
+          <p className="pedido-error">Hay artículos sin precio. Completalos acá{tipo === 'remito' ? ' o cargalos en Productos' : ''}.</p>
         ) : null}
       </article>
 
@@ -408,18 +569,20 @@ export default function ComprobanteScreen({ pedidos, pedidoInicial, onCerrar }) 
               <p><b>Señor/es:</b> {cliente || '—'}</p>
               <p><b>Dirección:</b> {domicilio || '—'} · {localidad || '—'}</p>
               <p>
-                IVA {IVA_CLIENTE.find((op) => op.id === ivaCliente)?.label || 'Cons. Final'}
-                {cobro === 'fiado' || esCuentaCorriente(pago) ? ' · Fiado / Cta. Cte.' : ' · Pagó'}
+                IVA {ivaLabel}
+                {cuitCliente ? ` · CUIT ${cuitCliente}` : ''}
+                {cobro === 'fiado' || esCuentaCorriente(pago) ? ' · Cta. Cte.' : ' · Contado'}
+                {remitoNro ? ` · Remito Nº ${remitoNro}` : ''}
               </p>
               <ul>
-                {lineas.slice(0, 6).map((item) => (
+                {filasOk.slice(0, 8).map((item) => (
                   <li key={item.id}>
-                    <span>{item.cantidad} · {item.nombre}</span>
+                    <span>{item.cantidad} · {item.codigo ? `${item.codigo} — ` : ''}{item.nombre}</span>
                     <span>{dinero(item.precio * item.cantidad)}</span>
                   </li>
                 ))}
               </ul>
-              {lineas.length > 6 ? <p className="vacio">+ {lineas.length - 6} objetos más</p> : null}
+              {filasOk.length > 8 ? <p className="vacio">+ {filasOk.length - 8} artículos más</p> : null}
               <p className="comp__hoja-total">TOTAL $ {dinero(total)}</p>
             </>
           ) : (
@@ -437,14 +600,14 @@ export default function ComprobanteScreen({ pedidos, pedidoInicial, onCerrar }) 
               </div>
               <p><b>Cliente:</b> {cliente || '—'}</p>
               <ul>
-                {lineas.slice(0, 6).map((item) => (
+                {filasOk.slice(0, 6).map((item) => (
                   <li key={item.id}>
                     <span>{item.cantidad} · {item.nombre}</span>
                     <span>{dinero(item.precio * item.cantidad)}</span>
                   </li>
                 ))}
               </ul>
-              {lineas.length > 6 ? <p className="vacio">+ {lineas.length - 6} objetos más</p> : null}
+              {filasOk.length > 6 ? <p className="vacio">+ {filasOk.length - 6} objetos más</p> : null}
               <p className="comp__hoja-total">TOTAL $ {dinero(total)}</p>
             </>
           )}

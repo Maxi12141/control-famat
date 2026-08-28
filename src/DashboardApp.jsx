@@ -39,7 +39,7 @@ function onFotoError(event, slug) {
   img.src = '/images/placeholder.svg'
 }
 import { PanelContext, usePanel } from './lib/panel.jsx'
-import { dinero, etiquetaTipo, fechaHumana, hoyISO, MESES, nombreLinea, textoMonto } from './lib/format.js'
+import { dinero, etiquetaTipo, fechaHumana, hoyISO, MESES, nombreLinea } from './lib/format.js'
 import {
   cargarPedidos,
   cantidadItem,
@@ -1319,8 +1319,9 @@ function FactureroView({ productos, onGuardar }) {
                   <input
                     type="number"
                     min="0"
-                    value={recibido === '' ? textoMonto(total) : recibido}
+                    value={recibido}
                     onChange={(e) => setRecibido(e.target.value)}
+                    placeholder="0"
                   />
                 </label>
                 <div className="fact-vuelto is-falta">

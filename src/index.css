@@ -83,6 +83,20 @@
 .comp__items{padding:0;list-style:none}
 .comp__items li{border-top:1px solid #eef1f5;grid-template-columns:minmax(0,1fr) 70px 128px auto 34px;align-items:center;gap:8px;padding:6px 0;display:grid}
 .comp__items p{color:#6b7789;margin:2px 0 0;font-size:.78rem}
+.comp__renglones{display:grid;gap:8px}
+.comp__renglones-head{display:none}
+.comp__renglon{border:1px solid #e5e9ef;border-radius:12px;padding:10px;display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:end}
+.comp__renglon-lab{color:#6b7789;font-size:.72rem;font-weight:700}
+.comp__renglon-imp{align-self:center;justify-self:start;font-size:1rem}
+.comp__renglon .comp__sacar{justify-self:end}
+.comp__agregar{width:100%;margin-top:10px}
+@media (width>=720px){
+  .comp__renglones-head{display:grid;grid-template-columns:88px minmax(0,1.4fr) 78px 110px 90px 34px;gap:8px;color:#6b7789;font-size:.72rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;padding:0 2px}
+  .comp__renglon{grid-template-columns:88px minmax(0,1.4fr) 78px 110px 90px 34px;border:0;border-top:1px solid #eef1f5;border-radius:0;padding:8px 0}
+  .comp__renglon-lab{display:none}
+  .comp__renglon-imp{justify-self:end}
+  .comp__agregar{width:auto}
+}
 .comp__sacar{color:#c01f2e;cursor:pointer;background:#fee2e2;border:0;border-radius:8px;width:34px;height:34px;font-size:1.35rem;line-height:1;font-weight:700;flex-shrink:0}
 .comp__toggle{color:#0b3a56;cursor:pointer;background:0 0;border:0;margin-bottom:8px;padding:0;font-weight:800}
 .comp .panel{padding:12px 14px}
