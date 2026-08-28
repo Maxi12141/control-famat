@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { dinero, fechaHumana, textoMonto } from '../lib/format.js'
+import { dinero, fechaHumana } from '../lib/format.js'
 import { usePanel } from '../lib/panel.jsx'
 import {
   actualizarDatosCliente,
@@ -85,12 +85,12 @@ export default function CuentasScreen({ tick }) {
   }
 
   const cobrar = (row) => {
-    const raw = String(montos[row.cliente] ?? textoMonto(row.debe)).trim().replace(',', '.')
-    const valor = raw === '' ? row.debe : Number(raw)
+    const raw = String(montos[row.cliente] ?? '').trim().replace(',', '.')
+    const valor = Number(raw) || 0
     const tel = String(draftDe(row).telefono || row.telefono || '').trim()
     const ok = registrarCobro({ cliente: row.cliente, telefono: tel, monto: valor })
     if (!ok) {
-      setAviso('Ingresá un monto válido.')
+      setAviso('Poné cuánto entregó ahora.')
       return
     }
     setMontos((prev) => {
@@ -145,7 +145,7 @@ export default function CuentasScreen({ tick }) {
           const abiertoEsta = abierto === key
           const movs = abiertoEsta ? movimientosDe(row.cliente) : []
           const wa = row.debe > 0.5 ? linkWhatsAppDeuda(row.cliente, row.telefono, row.debe) : ''
-          const texto = montos[key] ?? textoMonto(row.debe)
+          const texto = montos[key] ?? '0'
           const entrega = Math.max(0, Number(String(texto).replace(',', '.')) || 0)
           const queda = Math.max(0, row.debe - entrega)
           const draft = draftDe(row)
@@ -217,6 +217,7 @@ export default function CuentasScreen({ tick }) {
                           min="0"
                           step="1"
                           value={texto}
+                          placeholder="0"
                           onChange={(e) => setMontos((prev) => ({ ...prev, [key]: e.target.value }))}
                         />
                       </label>
