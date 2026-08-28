@@ -1,0 +1,11 @@
+node_modules
+release-electron
+release
+dist
+.git
+*.exe
+.env*
+.cursor
+agent-transcripts
+tmp-*.html
+scripts/_preview-factura.*

@@ -1179,7 +1179,7 @@ function FactureroView({ productos, onGuardar }) {
             <tbody>
               {lineas.map((fila) => (
                 <tr key={fila.id}>
-                  <td className={`fact-planilla__cod${sugerencias.id === fila.id && sugerencias.items.length ? ' is-sug' : ''}`}>
+                  <td data-label="Código" className={`fact-planilla__cod${sugerencias.id === fila.id && sugerencias.items.length ? ' is-sug' : ''}`}>
                     <input
                       value={fila.codigo}
                       autoComplete="off"
@@ -1226,8 +1226,8 @@ function FactureroView({ productos, onGuardar }) {
                       </div>
                     ) : null}
                   </td>
-                  <td className="fact-planilla__nom">{fila.nombre || '—'}</td>
-                  <td className="fact-planilla__cant">
+                  <td data-label="Artículo" className="fact-planilla__nom">{fila.nombre || '—'}</td>
+                  <td data-label="Cant." className="fact-planilla__cant">
                     <input
                       className="fact-planilla__num"
                       type="number"
@@ -1249,7 +1249,7 @@ function FactureroView({ productos, onGuardar }) {
                   </td>
                   {verPrecios ? (
                     <>
-                      <td className="fact-planilla__precio">
+                      <td data-label="Precio" className="fact-planilla__precio">
                         {fila.slug && verPrecios ? (
                           <input
                             className="fact-planilla__num"
@@ -1271,10 +1271,10 @@ function FactureroView({ productos, onGuardar }) {
                           />
                         ) : (fila.slug ? dinero(fila.precio) : '$')}
                       </td>
-                      <td className="fact-planilla__imp">{fila.slug && Number(fila.cantidad) ? dinero(fila.precio * Number(fila.cantidad)) : '$'}</td>
+                      <td data-label="Total" className="fact-planilla__imp">{fila.slug && Number(fila.cantidad) ? dinero(fila.precio * Number(fila.cantidad)) : '$'}</td>
                     </>
                   ) : null}
-                  <td>
+                  <td className="fact-planilla__del-cell">
                     {fila.slug ? (
                       <button type="button" className="fact-planilla__del" onClick={() => limpiarFila(fila.id)}>×</button>
                     ) : null}
@@ -1284,7 +1284,7 @@ function FactureroView({ productos, onGuardar }) {
             </tbody>
             <tfoot>
               <tr>
-                <td colSpan={3}>TOTAL</td>
+                <td className="fact-planilla__total-lab" colSpan={3}>TOTAL</td>
                 {verPrecios ? (
                   <>
                     <td />
@@ -1353,7 +1353,7 @@ function FactureroView({ productos, onGuardar }) {
         {error ? <p className="gate__error">{error}</p> : null}
         <button
           type="button"
-          className="dash-btn dash-btn--navy"
+          className="dash-btn dash-btn--navy fact-guardar"
           onClick={() => {
             if (!filasOk.length) {
               setError('Agregá al menos un producto.')
