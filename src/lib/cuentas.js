@@ -37,15 +37,15 @@ export function claveCliente(nombre) {
     .replace(/[\u0300-\u036f]/g, '')
 }
 
-export function totalPedido(pedido) {
+export function totalPedido(pedido, lista) {
   if (!pedido) return 0
   return itemsPedido(pedido).reduce((acc, item) => {
     const slug = productoDeItemPedido(item)
-    return acc + (precioCobroDe(slug) || 0) * (cantidadItem(item) || 0)
+    return acc + (precioCobroDe(slug, lista) || 0) * (cantidadItem(item) || 0)
   }, 0)
 }
 
-export function itemsDePedido(pedido) {
+export function itemsDePedido(pedido, lista) {
   if (!pedido) return []
   return itemsPedido(pedido).map((item) => {
     const slug = productoDeItemPedido(item)
@@ -53,7 +53,7 @@ export function itemsDePedido(pedido) {
       slug,
       nombre: item.nombre,
       cantidad: cantidadItem(item) || 0,
-      precio: precioCobroDe(slug) || 0,
+      precio: precioCobroDe(slug, lista) || 0,
       tipo: item.tipo || '',
     }
   }).filter((item) => item.nombre && item.cantidad > 0)

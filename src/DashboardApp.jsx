@@ -55,10 +55,11 @@ import {
   ordenarPedidos,
   unidadItem,
 } from './lib/pedidos.js'
-import { aumentarPrecios, aplicarPorcentajeACobro, cobroDesdeVenta, guardarPrecio, guardarPreciosLote, parsearCodigos, parsearListadoPrecios, precioCobroDe, precioDe } from './lib/precios.js'
+import { aumentarPrecios, aplicarPorcentajeACobro, cobroDesdeVenta, esListaEscuela, guardarPrecio, guardarPreciosLote, LISTA_ESCUELA, LISTA_PUBLICO, parsearCodigos, parsearListadoPrecios, pctPublico, PCT_ESCUELA, pareceEscuela, precioCobroDe, precioDe, redondearEscuela } from './lib/precios.js'
 import { ajustarStock, conteoStock, esAlerta, etiquetaUnidad, formatoStock, pasoStock, setMinimoAlerta, sinStock, stockDe, umbralAlerta, unidadDeTipo } from './lib/stock.js'
 import {
   aplicarPedidosAlStock,
+  actualizarImportesPedido,
   guardarVentaLocal,
   marcarVentaPagada,
   periodosPerdidas,
@@ -183,8 +184,27 @@ function InicioView({ pedidos, pendientes, ultimos, productos, alerta, deuda, de
   )
 }
 
+function ListaPreciosToggle({ value, onChange }) {
+  return (
+    <div className="comp__cobro">
+      <p className="comp__label">¿Qué lista de precios?</p>
+      <div className="comp__tipos">
+        <button type="button" className={value === LISTA_PUBLICO ? 'is-on' : ''} onClick={() => onChange(LISTA_PUBLICO)}>
+          Público
+          <small>Para la gente</small>
+        </button>
+        <button type="button" className={value === LISTA_ESCUELA ? 'is-on' : ''} onClick={() => onChange(LISTA_ESCUELA)}>
+          Escuela
+          <small>{PCT_ESCUELA}% más que el público</small>
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function PedidoCard({ pedido, abierto, guardando, onToggle, onEstado, onDocumento, onCuentas }) {
   const [sinTel, setSinTel] = useState(false)
+  const [listaPrecio, setListaPrecio] = useState(LISTA_PUBLICO)
   const { verPrecios } = usePanel()
   const estado = estadoCanonico(pedido.estado)
   const items = itemsPedido(pedido)
@@ -223,8 +243,24 @@ function PedidoCard({ pedido, abierto, guardando, onToggle, onEstado, onDocument
           </p>
           {(() => {
             const cargo = cargoDePedido(pedido.id)
-            const total = totalPedido(pedido)
+            const itemsCargo = itemsDePedido(pedido, listaPrecio)
+            const total = totalPedido(pedido, listaPrecio)
             const tieneCliente = Boolean(String(pedido.cliente || '').trim())
+            const anotarCargo = (modo) => {
+              actualizarImportesPedido(pedido.id, itemsCargo)
+              registrarCargo({
+                cliente: pedido.cliente,
+                telefono: pedido.telefono,
+                pedidoId: pedido.id,
+                total,
+                modo,
+                fecha: pedido.entrega,
+                notas: esListaEscuela(listaPrecio) ? 'Lista escuela' : 'Lista público',
+                items: itemsCargo,
+              })
+              if (modo === 'pagado') marcarVentaPagada({ pedidoId: pedido.id, cliente: pedido.cliente, fecha: hoyISO() })
+              onCuentas?.()
+            }
             if (cargo) {
               const debe = resumenDe(pedido.cliente)?.debe || 0
               const pagoFiado = cargo.modo === 'fiado' && debe <= 0.5
@@ -240,42 +276,20 @@ function PedidoCard({ pedido, abierto, guardando, onToggle, onEstado, onDocument
             }
             return (
               <div className="cuenta-acciones">
-                {verPrecios ? <p>Total según precio: <strong>{dinero(total)}</strong></p> : null}
+                {verPrecios ? <ListaPreciosToggle value={listaPrecio} onChange={setListaPrecio} /> : null}
+                {verPrecios ? <p>Total según {esListaEscuela(listaPrecio) ? 'precio escuela' : 'precio público'}: <strong>{dinero(total)}</strong></p> : null}
                 <div className="pedido-estados">
                   <button
                     type="button"
                     disabled={!total || !tieneCliente}
-                    onClick={() => {
-                      registrarCargo({
-                        cliente: pedido.cliente,
-                        telefono: pedido.telefono,
-                        pedidoId: pedido.id,
-                        total,
-                        modo: 'pagado',
-                        fecha: pedido.entrega,
-                        items: itemsDePedido(pedido),
-                      })
-                      marcarVentaPagada({ pedidoId: pedido.id, cliente: pedido.cliente, fecha: hoyISO() })
-                      onCuentas?.()
-                    }}
+                    onClick={() => anotarCargo('pagado')}
                   >
                     Pagó
                   </button>
                   <button
                     type="button"
                     disabled={!total || !tieneCliente}
-                    onClick={() => {
-                      registrarCargo({
-                        cliente: pedido.cliente,
-                        telefono: pedido.telefono,
-                        pedidoId: pedido.id,
-                        total,
-                        modo: 'fiado',
-                        fecha: pedido.entrega,
-                        items: itemsDePedido(pedido),
-                      })
-                      onCuentas?.()
-                    }}
+                    onClick={() => anotarCargo('fiado')}
                   >
                     Se lleva fiado
                   </button>
@@ -582,7 +596,7 @@ function ProductoPrecioCard({
       {verPrecios ? (
       <div className="prod-card__precios">
         <label>
-          Precio lista
+          Precio inicial
           <input
             className="precio-input"
             type="number"
@@ -596,7 +610,14 @@ function ProductoPrecioCard({
           />
         </label>
         <label>
-          Venta
+          %
+          <span className="precio-input precio-input--read">
+            {precio.venta && precio.publico ? `${pctPublico(precio.venta, precio.publico)}%` : '—'}
+          </span>
+          <small>Sobre el inicial → público</small>
+        </label>
+        <label>
+          Público
           <input
             className="precio-input"
             type="number"
@@ -608,6 +629,11 @@ function ProductoPrecioCard({
             onKeyDown={(e) => onKeyPrecio(e, index, 'cobro', item.slug)}
             key={`${item.slug}-cobro-${tablaKey}`}
           />
+        </label>
+        <label>
+          Escuelas
+          <span className="precio-input precio-input--read">{precio.escuela ? dinero(precio.escuela) : '—'}</span>
+          <small>+{PCT_ESCUELA}% del público</small>
         </label>
       </div>
       ) : null}
@@ -636,6 +662,7 @@ function ProductosView({ productos, onCambio }) {
   const [porcentaje, setPorcentaje] = useState('')
   const [listado, setListado] = useState('')
   const [tablaKey, setTablaKey] = useState(0)
+  const [preciosTick, setPreciosTick] = useState(0)
   const [codigoRapido, setCodigoRapido] = useState('')
   const codigoRapidoRef = useRef(null)
 
@@ -704,6 +731,7 @@ function ProductosView({ productos, onCambio }) {
     const n = Number(valor) || 0
     if (campo === 'venta') guardarPrecio(slug, n)
     else guardarPrecio(slug, precioDe(slug).venta, n)
+    setPreciosTick((v) => v + 1)
   }
 
   const focoSiguiente = (index, campo) => {
@@ -775,17 +803,17 @@ function ProductosView({ productos, onCambio }) {
         continue
       }
       if (!fila.lista) {
-        miss.push(`${fila.codigo} (sin precio lista)`)
+        miss.push(`${fila.codigo} (sin precio inicial)`)
         continue
       }
       guardarPrecio(fila.item.slug, fila.lista, cobroDesdeVenta(fila.lista, pct))
-      okItems.push(`${fila.item.codigo} venta ${dinero(cobroDesdeVenta(fila.lista, pct))}`)
+      okItems.push(`${fila.item.codigo} público ${dinero(cobroDesdeVenta(fila.lista, pct))} · escuela ${dinero(redondearEscuela(cobroDesdeVenta(fila.lista, pct)))}`)
     }
     if (!okItems.length) {
       setError(miss.length ? `No se pudo actualizar: ${miss.join(', ')}.` : 'Poné códigos válidos.')
       return
     }
-    setOk(`Venta actualizada (${pct}% sobre precio lista): ${okItems.join(' · ')}${miss.length ? ` · no coincidieron ${miss.join(', ')}` : ''}`)
+    setOk(`Público actualizado (${pct}% sobre precio inicial). Escuelas queda +${PCT_ESCUELA}%: ${okItems.join(' · ')}${miss.length ? ` · no coincidieron ${miss.join(', ')}` : ''}`)
     setError('')
     setTablaKey((v) => v + 1)
     setCodigoRapido('')
@@ -794,7 +822,7 @@ function ProductosView({ productos, onCambio }) {
   }
 
   const listaPrecios = (opts = {}) => (
-    <div className="prod-cards">
+    <div className="prod-cards" data-precios-tick={preciosTick}>
       {visibles.map((item, index) => {
         const precio = precioDe(item.slug)
         return (
@@ -851,8 +879,12 @@ function ProductosView({ productos, onCambio }) {
             <label>O nueva línea<input value={lineaNueva} onChange={(e) => setLineaNueva(e.target.value)} placeholder="Si no está en la lista" /></label>
             {verPrecios ? (
               <>
-                <label>Precio lista<input type="number" min="0" value={venta} onChange={(e) => setVenta(e.target.value)} /></label>
-                <label>Venta<input type="number" min="0" value={cobro} onChange={(e) => setCobro(e.target.value)} /></label>
+                <label>Precio inicial<input type="number" min="0" value={venta} onChange={(e) => setVenta(e.target.value)} /></label>
+                <label>
+                  Público
+                  <input type="number" min="0" value={cobro} onChange={(e) => setCobro(e.target.value)} />
+                  <small>Escuelas queda {PCT_ESCUELA}% más, no hace falta cargarlo.</small>
+                </label>
               </>
             ) : null}
             <label>Imagen<input type="file" accept="image/*" onChange={(e) => leerFoto(e.target.files?.[0])} /></label>
@@ -879,7 +911,7 @@ function ProductosView({ productos, onCambio }) {
     return (
       <>
         <h1>Carga rápida de precios</h1>
-        <p className="dash-sub">Pegá varios códigos. El precio lista ya tiene que estar cargado: con tu % se actualiza la venta.</p>
+        <p className="dash-sub">Pegá varios códigos. El precio inicial ya tiene que estar cargado: con tu % se actualiza el público. Escuelas queda {PCT_ESCUELA}% más.</p>
         <button type="button" className="prod-back" onClick={volver}>← Volver a productos</button>
         {error ? <p className="gate__error">{error}</p> : null}
         {ok ? <p className="ok-msg">{ok}</p> : null}
@@ -924,7 +956,7 @@ function ProductosView({ productos, onCambio }) {
               />
             </label>
             <button type="button" className="dash-btn dash-btn--navy" onClick={ponerVentaPorCodigos}>
-              Poner en venta
+              Poner público
             </button>
           </div>
           {hitsRapidos.length ? (
@@ -933,12 +965,12 @@ function ProductosView({ productos, onCambio }) {
                 <p key={fila.codigo}>
                   <strong>{fila.codigo}</strong>
                   {fila.item ? ` · ${fila.item.nombre}` : ' · no encontrado'}
-                  {fila.item ? ` · lista ${fila.lista ? dinero(fila.lista) : 'sin cargar'} · venta ${fila.lista ? dinero(fila.venta) : '—'}` : ''}
+                  {fila.item ? ` · inicial ${fila.lista ? dinero(fila.lista) : 'sin cargar'} · público ${fila.lista ? dinero(fila.venta) : '—'} · escuela ${fila.lista ? dinero(redondearEscuela(fila.venta)) : '—'}` : ''}
                 </p>
               ))}
             </div>
           ) : (
-            <p className="vacio">Poné uno o más códigos (coma o un renglón cada uno). Se ve el precio lista y, con tu %, la venta.</p>
+            <p className="vacio">Poné uno o más códigos (coma o un renglón cada uno). Se ve el precio inicial, el público con tu %, y escuelas +{PCT_ESCUELA}%.</p>
           )}
           <div className="carga-rapida">
             <button
@@ -949,13 +981,13 @@ function ProductosView({ productos, onCambio }) {
                 if (raw === '' || Number.isNaN(Number(raw))) { setError('Poné un porcentaje, por ejemplo 40.'); return }
                 const n = Number(raw)
                 const cant = aplicarPorcentajeACobro(visibles.map((item) => item.slug), n)
-                setOk(`Venta = precio lista + ${n}% en ${cant} productos de esta lista.`)
+                setOk(`Público = precio inicial + ${n}%. Escuelas queda +${PCT_ESCUELA}% en ${cant} productos de esta lista.`)
                 setError('')
                 setTablaKey((v) => v + 1)
                 onCambio()
               }}
             >
-              Aplicar este % a la venta de la lista
+              Aplicar este % al precio público
             </button>
             <button
               type="button"
@@ -964,17 +996,17 @@ function ProductosView({ productos, onCambio }) {
                 const n = Number(String(porcentaje).replace(',', '.'))
                 if (!n) { setError('Poné un porcentaje, por ejemplo 10.'); return }
                 aumentarPrecios(visibles.map((item) => item.slug), n)
-                setOk(`Aumento del ${n}% en precio lista y venta de ${visibles.length} productos de esta lista.`)
+                setOk(`Aumento del ${n}% en precio inicial y público de ${visibles.length} productos. Escuelas queda +${PCT_ESCUELA}% del público.`)
                 setError('')
                 setTablaKey((v) => v + 1)
                 onCambio()
               }}
             >
-              Aumentar precio lista y venta
+              Aumentar precio inicial y público
             </button>
           </div>
           <label className="listado-precios">
-            Pegar listado: un renglón por producto, solo código y precio lista
+            Pegar listado: un renglón por producto, solo código y precio inicial
             <textarea value={listado} onChange={(e) => setListado(e.target.value)} rows={4} placeholder={'P001,2500\nL012,1800'} />
           </label>
           <button
@@ -982,7 +1014,7 @@ function ProductosView({ productos, onCambio }) {
             className="dash-btn dash-btn--navy"
             onClick={() => {
               const filas = parsearListadoPrecios(listado)
-              if (!filas.length) { setError('No se leyeron filas. Poné codigo,precio lista. Ejemplo: L001,2500'); return }
+              if (!filas.length) { setError('No se leyeron filas. Poné codigo,precio inicial. Ejemplo: L001,2500'); return }
               const lote = []
               let miss = 0
               for (const fila of filas) {
@@ -991,7 +1023,7 @@ function ProductosView({ productos, onCambio }) {
                 lote.push({ slug: match.slug, venta: fila.venta })
               }
               guardarPreciosLote(lote)
-              setOk(`Se actualizó el precio lista de ${lote.length} productos${miss ? ` · ${miss} códigos no coincidieron` : ''}. La venta se actualiza después con los códigos y el %.`)
+              setOk(`Se actualizó el precio inicial de ${lote.length} productos${miss ? ` · ${miss} códigos no coincidieron` : ''}. El público se actualiza después con los códigos y el %. Escuelas queda +${PCT_ESCUELA}%.`)
               setError('')
               setListado('')
               setTablaKey((v) => v + 1)
@@ -1031,7 +1063,7 @@ function ProductosView({ productos, onCambio }) {
     <>
       <h1>Productos</h1>
       <p className="dash-sub">
-        {productos.length} productos{verPrecios ? ` · ${sinPrecio} sin precio lista` : ''}. Los precios no se ven en la web de pedidos.
+        {productos.length} productos{verPrecios ? ` · ${sinPrecio} sin precio inicial` : ''}. Los precios no se ven en la web de pedidos.
       </p>
       <div className="prod-tiles">
         <button type="button" className="prod-tile" onClick={() => setPanel('alta')}>
@@ -1043,7 +1075,7 @@ function ProductosView({ productos, onCambio }) {
           <button type="button" className="prod-tile" onClick={() => setPanel('precios')}>
             <span className="prod-tile__kicker">Precios</span>
             <strong>Carga rápida de precios</strong>
-            <p>Varios códigos, ves el precio lista y con tu % queda la venta.</p>
+            <p>Varios códigos, ves el precio inicial y con tu % queda el público. Escuelas es +{PCT_ESCUELA}%.</p>
           </button>
         ) : null}
       </div>
@@ -1089,8 +1121,8 @@ function filaFacturaVacia() {
   }
 }
 
-function precioPorLitroDe(slug) {
-  return precioCobroDe(slug)
+function precioPorLitroDe(slug, lista) {
+  return precioCobroDe(slug, lista)
 }
 
 function FactureroView({ productos, onGuardar }) {
@@ -1101,6 +1133,7 @@ function FactureroView({ productos, onGuardar }) {
   const [telefono, setTelefono] = useState('')
   const [fecha, setFecha] = useState(hoyISO())
   const [entidad, setEntidad] = useState('')
+  const [listaPrecio, setListaPrecio] = useState(LISTA_PUBLICO)
   const [recibido, setRecibido] = useState('')
   const [cobro, setCobro] = useState('pagado')
   const [lineas, setLineas] = useState(() => Array.from({ length: 5 }, filaFacturaVacia))
@@ -1111,6 +1144,13 @@ function FactureroView({ productos, onGuardar }) {
   const plata = Number(String(recibido).replace(',', '.')) || 0
   const vuelto = plata - total
   const cliente = [nombre, apellido].map((parte) => parte.trim()).filter(Boolean).join(' ')
+
+  const aplicarLista = (lista) => {
+    setListaPrecio(lista)
+    setLineas((rows) => rows.map((fila) => (
+      fila.slug ? { ...fila, precio: precioPorLitroDe(fila.slug, lista) } : fila
+    )))
+  }
 
   const aplicarCodigo = (id, codigo, elegido) => {
     const texto = String(codigo || '').trim()
@@ -1131,8 +1171,8 @@ function FactureroView({ productos, onGuardar }) {
       setError(hits.length ? '' : 'No hay un producto con ese código.')
       return
     }
-    const precio = precioPorLitroDe(prod.slug)
-    setError(precio ? '' : (verPrecios ? 'Ese producto no tiene precio de venta. Cargalo en Productos.' : 'Ese producto no está listo. Avisale al jefe.'))
+    const precio = precioPorLitroDe(prod.slug, listaPrecio)
+    setError(precio ? '' : (verPrecios ? 'Ese producto no tiene precio público. Cargalo en Productos.' : 'Ese producto no está listo. Avisale al jefe.'))
     setLineas((lista) => {
       const next = lista.map((fila) => (
         fila.id === id
@@ -1171,7 +1211,7 @@ function FactureroView({ productos, onGuardar }) {
   return (
     <div className="fact-page">
       <h1>Facturación</h1>
-      <p className="dash-sub">{verPrecios ? 'Poné el código: aparece el producto y el precio. Cargás litros, kilos o unidades según el producto.' : 'Poné el código: aparece el producto. Cargás litros, kilos o unidades según el producto.'}</p>
+      <p className="dash-sub">{verPrecios ? 'Elegí público o escuela. Poné el código: aparece el producto y el precio. Cargás litros, kilos o unidades según el producto.' : 'Poné el código: aparece el producto. Cargás litros, kilos o unidades según el producto.'}</p>
       <article className="panel fact-panel">
         <div className="fact-banner">FAMAT</div>
         <p className="fact-cli-tit">DATOS DEL CLIENTE</p>
@@ -1185,8 +1225,20 @@ function FactureroView({ productos, onGuardar }) {
             <small>Opcional. Si se lleva fiado y no lo tenés, lo podés completar después en Cuentas.</small>
           </label>
           <label>Fecha<input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} /></label>
-          <label>Entidad<input value={entidad} onChange={(e) => setEntidad(e.target.value)} /></label>
+          <label>
+            Entidad
+            <input
+              value={entidad}
+              onChange={(e) => {
+                const v = e.target.value
+                setEntidad(v)
+                if (pareceEscuela(v) && listaPrecio !== LISTA_ESCUELA) aplicarLista(LISTA_ESCUELA)
+              }}
+              placeholder="Escuela, colegio…"
+            />
+          </label>
         </div>
+        {verPrecios ? <ListaPreciosToggle value={listaPrecio} onChange={aplicarLista} /> : null}
         {cliente ? <p className="fact-cliente-ok">Cliente: {cliente}</p> : null}
         <div className="fact-titulo">FACTURA DE COMPRA</div>
         <div className="fact-wrap">
@@ -1261,7 +1313,7 @@ function FactureroView({ productos, onGuardar }) {
                           >
                             <b>{item.codigo}</b>
                             <span title={item.nombre}>{item.nombre}</span>
-                            {verPrecios ? <em>{dinero(precioPorLitroDe(item.slug))}</em> : null}
+                            {verPrecios ? <em>{dinero(precioPorLitroDe(item.slug, listaPrecio))}</em> : null}
                           </button>
                         ))}
                       </div>
@@ -1411,7 +1463,13 @@ function FactureroView({ productos, onGuardar }) {
             }
             const entregaFiado = cobro === 'fiado' ? Math.min(Math.max(0, plata), total) : 0
             const pagoCompleto = cobro === 'pagado' || (entregaFiado > 0 && entregaFiado >= total)
-            const notas = [direccion && `Dir. ${direccion}`, telefono && `Tel. ${telefono}`, entidad && `Entidad ${entidad}`, cobro === 'fiado' && entregaFiado > 0 && `Entregó ${dinero(entregaFiado)}`]
+            const notas = [
+              direccion && `Dir. ${direccion}`,
+              telefono && `Tel. ${telefono}`,
+              entidad && `Entidad ${entidad}`,
+              esListaEscuela(listaPrecio) ? 'Lista escuela' : 'Lista público',
+              cobro === 'fiado' && entregaFiado > 0 && `Entregó ${dinero(entregaFiado)}`,
+            ]
               .filter(Boolean)
               .join(' · ')
             guardarVentaLocal({
@@ -1454,6 +1512,7 @@ function FactureroView({ productos, onGuardar }) {
             setDireccion('')
             setTelefono('')
             setEntidad('')
+            setListaPrecio(LISTA_PUBLICO)
             setFecha(hoyISO())
             setRecibido('')
             setCobro('pagado')

@@ -1,20 +1,71 @@
 import { guardarJSON, leerJSON } from './storage.js'
+import { PRECIOS_SEED } from '../data/preciosSeed.js'
 
 const KEY = 'famat_precios'
 
-function leer() {
+export const LISTA_PUBLICO = 'publico'
+export const LISTA_ESCUELA = 'escuela'
+export const PCT_ESCUELA = 10
+
+function leerGuardado() {
   const data = leerJSON(KEY, {})
   return data && typeof data === 'object' ? data : {}
 }
 
-export function precioDe(slug) {
-  const row = leer()[slug]
-  return { venta: Number(row?.venta) || 0, costo: Number(row?.costo) || 0 }
+function filaEfectiva(slug) {
+  const saved = leerGuardado()[slug]
+  const seed = PRECIOS_SEED[slug]
+  const venta = Number(saved?.venta) || Number(seed?.venta) || 0
+  const costo = Number(saved?.costo) || Number(seed?.costo) || 0
+  return { venta, costo }
 }
 
-export function precioCobroDe(slug) {
+function leer() {
+  const slugs = new Set([...Object.keys(PRECIOS_SEED), ...Object.keys(leerGuardado())])
+  const out = {}
+  for (const slug of slugs) out[slug] = filaEfectiva(slug)
+  return out
+}
+
+export function redondearEscuela(publico) {
+  const n = Math.max(0, Number(publico) || 0)
+  return n ? Math.round(n * (1 + PCT_ESCUELA / 100)) : 0
+}
+
+export function pctPublico(inicial, publico) {
+  const base = Math.max(0, Number(inicial) || 0)
+  const pub = Math.max(0, Number(publico) || 0)
+  if (!base || !pub) return null
+  return Math.round((pub / base - 1) * 100)
+}
+
+export function esListaEscuela(lista) {
+  return lista === LISTA_ESCUELA
+}
+
+export function pareceEscuela(texto) {
+  return /\b(escuela|colegio|jard[ií]n|jardin|instituto|secundari[oa]|primari[oa])\b/i.test(String(texto || ''))
+}
+
+export function precioDe(slug) {
+  const row = filaEfectiva(slug)
+  const venta = Number(row.venta) || 0
+  const costo = Number(row.costo) || 0
+  const publico = costo || venta || 0
+  return { venta, costo, publico, escuela: redondearEscuela(publico) }
+}
+
+export function precioPublicoDe(slug) {
+  return precioDe(slug).publico
+}
+
+export function precioEscuelaDe(slug) {
+  return precioDe(slug).escuela
+}
+
+export function precioCobroDe(slug, lista = LISTA_PUBLICO) {
   const row = precioDe(slug)
-  return row.costo || row.venta || 0
+  return esListaEscuela(lista) ? row.escuela : row.publico
 }
 
 export function cobroDesdeVenta(venta, porcentaje) {
@@ -24,10 +75,10 @@ export function cobroDesdeVenta(venta, porcentaje) {
 }
 
 export function aplicarPorcentajeACobro(slugs, porcentaje) {
-  const data = leer()
+  const data = leerGuardado()
   let n = 0
   for (const slug of slugs) {
-    const actual = data[slug] || { venta: 0, costo: 0 }
+    const actual = filaEfectiva(slug)
     const venta = Number(actual.venta) || 0
     if (!venta) continue
     data[slug] = { venta, costo: cobroDesdeVenta(venta, porcentaje) }
@@ -38,23 +89,23 @@ export function aplicarPorcentajeACobro(slugs, porcentaje) {
 }
 
 export function guardarPrecio(slug, venta, costo) {
-  const data = leer()
-  const actual = precioDe(slug)
+  const data = leerGuardado()
+  const actual = filaEfectiva(slug)
   data[slug] = {
     venta: Math.max(0, Number(venta) || 0),
     costo: costo == null ? actual.costo : Math.max(0, Number(costo) || 0),
   }
   guardarJSON(KEY, data)
-  return data[slug]
+  return precioDe(slug)
 }
 
 export function guardarPreciosLote(filas) {
-  const data = leer()
+  const data = leerGuardado()
   for (const fila of filas) {
-    const actual = data[fila.slug] || { venta: 0, costo: 0 }
+    const actual = filaEfectiva(fila.slug)
     data[fila.slug] = {
-      venta: fila.venta == null ? Number(actual.venta) || 0 : Math.max(0, Number(fila.venta) || 0),
-      costo: fila.costo == null ? Number(actual.costo) || 0 : Math.max(0, Number(fila.costo) || 0),
+      venta: fila.venta == null ? actual.venta : Math.max(0, Number(fila.venta) || 0),
+      costo: fila.costo == null ? actual.costo : Math.max(0, Number(fila.costo) || 0),
     }
   }
   guardarJSON(KEY, data)
@@ -62,9 +113,9 @@ export function guardarPreciosLote(filas) {
 
 export function aumentarPrecios(slugs, porcentaje) {
   const factor = 1 + (Number(porcentaje) || 0) / 100
-  const data = leer()
+  const data = leerGuardado()
   for (const slug of slugs) {
-    const actual = data[slug] || { venta: 0, costo: 0 }
+    const actual = filaEfectiva(slug)
     data[slug] = {
       venta: actual.venta ? Math.round(Number(actual.venta) * factor) : 0,
       costo: actual.costo ? Math.round(Number(actual.costo) * factor) : Number(actual.costo) || 0,

@@ -141,6 +141,21 @@ function idsAplicados() {
   return new Set(Array.isArray(raw) ? raw.map(String) : [])
 }
 
+export function actualizarImportesPedido(pedidoId, items) {
+  if (pedidoId == null || pedidoId === '') return false
+  const filas = Array.isArray(items) ? items : []
+  const total = filas.reduce((acc, item) => acc + (Number(item.precio) || 0) * (Number(item.cantidad) || 0), 0)
+  const ventas = leerVentas()
+  let cambio = false
+  const next = ventas.map((venta) => {
+    if (String(venta.pedidoId) !== String(pedidoId)) return venta
+    cambio = true
+    return { ...venta, items: filas, total }
+  })
+  if (cambio) guardarJSON(KEY_VENTAS, next)
+  return cambio
+}
+
 export function marcarVentaPagada({ pedidoId, cliente, fecha }) {
   const ventas = leerVentas()
   let cambio = false

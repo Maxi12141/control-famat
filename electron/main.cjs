@@ -2,6 +2,7 @@ const { app, BrowserWindow, nativeTheme, shell } = require('electron')
 const path = require('path')
 
 const isDev = !app.isPackaged
+const APP_URL = 'https://control-famat.vercel.app'
 nativeTheme.themeSource = 'light'
 
 function createWindow() {
@@ -28,9 +29,17 @@ function createWindow() {
   if (isDev) {
     win.loadURL(process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173')
     win.webContents.openDevTools({ mode: 'detach' })
-  } else {
-    win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
+    return
   }
+
+  const localIndex = path.join(__dirname, '..', 'dist', 'index.html')
+  let usoLocal = false
+  win.webContents.on('did-fail-load', (_event, code, _desc, _url, isMainFrame) => {
+    if (!isMainFrame || usoLocal || code === -3) return
+    usoLocal = true
+    win.loadFile(localIndex)
+  })
+  win.loadURL(APP_URL)
 }
 
 app.whenReady().then(() => {
