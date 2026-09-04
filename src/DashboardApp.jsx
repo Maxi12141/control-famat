@@ -616,8 +616,8 @@ function ProductoPrecioCard({
           </span>
           <small>Sobre el inicial → público</small>
         </label>
-        <label>
-          Público
+        <label className="precio-publico">
+          Precio público
           <input
             className="precio-input"
             type="number"
@@ -880,8 +880,8 @@ function ProductosView({ productos, onCambio }) {
             {verPrecios ? (
               <>
                 <label>Precio inicial<input type="number" min="0" value={venta} onChange={(e) => setVenta(e.target.value)} /></label>
-                <label>
-                  Público
+                <label className="precio-publico">
+                  Precio público
                   <input type="number" min="0" value={cobro} onChange={(e) => setCobro(e.target.value)} />
                   <small>Escuelas queda {PCT_ESCUELA}% más, no hace falta cargarlo.</small>
                 </label>
@@ -1214,16 +1214,35 @@ function FactureroView({ productos, onGuardar }) {
       <p className="dash-sub">{verPrecios ? 'Elegí público o escuela. Poné el código: aparece el producto y el precio. Cargás litros, kilos o unidades según el producto.' : 'Poné el código: aparece el producto. Cargás litros, kilos o unidades según el producto.'}</p>
       <article className="panel fact-panel">
         <div className="fact-banner">FAMAT</div>
-        <p className="fact-cli-tit">DATOS DEL CLIENTE</p>
-        <div className="fact-cli">
-          <label>Nombre<input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre" /></label>
-          <label>Apellido<input value={apellido} onChange={(e) => setApellido(e.target.value)} placeholder="Apellido" /></label>
-          <label>Dirección<input value={direccion} onChange={(e) => setDireccion(e.target.value)} /></label>
-          <label>
-            Teléfono
-            <input value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder="Para avisar si debe" />
-            <small>Opcional. Si se lleva fiado y no lo tenés, lo podés completar después en Cuentas.</small>
-          </label>
+        <div className="comp__cobro">
+          <p className="comp__label">¿Pagó o se lleva fiado?</p>
+          <div className="comp__tipos">
+            <button type="button" className={cobro === 'pagado' ? 'is-on' : ''} onClick={() => setCobro('pagado')}>
+              Pagó
+              <small>Dejó el dinero del precio</small>
+            </button>
+            <button type="button" className={cobro === 'fiado' ? 'is-on' : ''} onClick={() => setCobro('fiado')}>
+              Fiado
+              <small>Se lleva ahora y paga después</small>
+            </button>
+          </div>
+        </div>
+        {cobro === 'fiado' ? (
+          <>
+            <p className="fact-cli-tit">DATOS DEL CLIENTE</p>
+            <div className="fact-cli fact-cli--persona">
+              <label>Nombre<input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre" /></label>
+              <label>Apellido<input value={apellido} onChange={(e) => setApellido(e.target.value)} placeholder="Apellido" /></label>
+              <label>Dirección<input value={direccion} onChange={(e) => setDireccion(e.target.value)} /></label>
+              <label>
+                Teléfono
+                <input value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder="Para avisar si debe" />
+                <small>Opcional. Si se lleva fiado y no lo tenés, lo podés completar después en Cuentas.</small>
+              </label>
+            </div>
+          </>
+        ) : null}
+        <div className="fact-cli fact-cli--meta">
           <label>Fecha<input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} /></label>
           <label>
             Entidad
@@ -1239,7 +1258,7 @@ function FactureroView({ productos, onGuardar }) {
           </label>
         </div>
         {verPrecios ? <ListaPreciosToggle value={listaPrecio} onChange={aplicarLista} /> : null}
-        {cliente ? <p className="fact-cliente-ok">Cliente: {cliente}</p> : null}
+        {cobro === 'fiado' && cliente ? <p className="fact-cliente-ok">Cliente: {cliente}</p> : null}
         <div className="fact-titulo">FACTURA DE COMPRA</div>
         <div className="fact-wrap">
           <table className="fact-planilla">
@@ -1431,19 +1450,6 @@ function FactureroView({ productos, onGuardar }) {
             <p className="vacio">Queda anotado el fiado de {cliente || 'el cliente'}.</p>
           )}
         </div>
-        <div className="comp__cobro">
-          <p className="comp__label">¿Pagó o se lleva fiado?</p>
-          <div className="comp__tipos">
-            <button type="button" className={cobro === 'pagado' ? 'is-on' : ''} onClick={() => setCobro('pagado')}>
-              Pagó
-              <small>Dejó el dinero del precio</small>
-            </button>
-            <button type="button" className={cobro === 'fiado' ? 'is-on' : ''} onClick={() => setCobro('fiado')}>
-              Fiado
-              <small>Se lleva ahora y paga después</small>
-            </button>
-          </div>
-        </div>
         {error ? <p className="gate__error">{error}</p> : null}
         <button
           type="button"
@@ -1453,7 +1459,7 @@ function FactureroView({ productos, onGuardar }) {
               setError('Agregá al menos un producto.')
               return
             }
-            if (!nombre.trim() || !apellido.trim()) {
+            if (cobro === 'fiado' && (!nombre.trim() || !apellido.trim())) {
               setError('Poné el nombre y el apellido del cliente.')
               return
             }
@@ -1463,9 +1469,11 @@ function FactureroView({ productos, onGuardar }) {
             }
             const entregaFiado = cobro === 'fiado' ? Math.min(Math.max(0, plata), total) : 0
             const pagoCompleto = cobro === 'pagado' || (entregaFiado > 0 && entregaFiado >= total)
+            const clienteGuardar = cobro === 'fiado' ? cliente : 'Contado'
+            const telefonoGuardar = cobro === 'fiado' ? telefono : ''
             const notas = [
-              direccion && `Dir. ${direccion}`,
-              telefono && `Tel. ${telefono}`,
+              cobro === 'fiado' && direccion && `Dir. ${direccion}`,
+              cobro === 'fiado' && telefono && `Tel. ${telefono}`,
               entidad && `Entidad ${entidad}`,
               esListaEscuela(listaPrecio) ? 'Lista escuela' : 'Lista público',
               cobro === 'fiado' && entregaFiado > 0 && `Entregó ${dinero(entregaFiado)}`,
@@ -1474,8 +1482,8 @@ function FactureroView({ productos, onGuardar }) {
               .join(' · ')
             guardarVentaLocal({
               origen: 'local',
-              cliente,
-              telefono,
+              cliente: clienteGuardar,
+              telefono: telefonoGuardar,
               fecha,
               pagado: pagoCompleto,
               items: filasOk.map((fila) => ({
@@ -1487,24 +1495,26 @@ function FactureroView({ productos, onGuardar }) {
                 tipo: fila.tipo,
               })),
             })
-            registrarCargo({
-              cliente,
-              telefono,
-              total,
-              modo: pagoCompleto ? 'pagado' : 'fiado',
-              fecha,
-              notas,
-              items: filasOk.map((fila) => ({
-                slug: fila.slug,
-                nombre: fila.nombre,
-                codigo: fila.codigo,
-                cantidad: Number(fila.cantidad),
-                precio: fila.precio,
-                tipo: fila.tipo,
-              })),
-            })
-            if (!pagoCompleto && entregaFiado > 0) {
-              registrarCobro({ cliente, telefono, monto: entregaFiado, notas: 'Seña / entregó ahora', fecha })
+            if (cobro === 'fiado') {
+              registrarCargo({
+                cliente,
+                telefono,
+                total,
+                modo: pagoCompleto ? 'pagado' : 'fiado',
+                fecha,
+                notas,
+                items: filasOk.map((fila) => ({
+                  slug: fila.slug,
+                  nombre: fila.nombre,
+                  codigo: fila.codigo,
+                  cantidad: Number(fila.cantidad),
+                  precio: fila.precio,
+                  tipo: fila.tipo,
+                })),
+              })
+              if (!pagoCompleto && entregaFiado > 0) {
+                registrarCobro({ cliente, telefono, monto: entregaFiado, notas: 'Seña / entregó ahora', fecha })
+              }
             }
             setLineas(Array.from({ length: 5 }, filaFacturaVacia))
             setNombre('')
