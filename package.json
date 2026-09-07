@@ -1,7 +1,7 @@
 {
   "name": "control-famat",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Controlador Famat — panel de pedidos, stock y precios",
   "author": "Famat",
   "type": "module",

@@ -61,7 +61,7 @@ async function boot() {
     `
   }
 
-  if ('serviceWorker' in navigator) {
+  if ('serviceWorker' in navigator && !navigator.userAgent.includes('Electron')) {
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('/sw.js').catch((err) => {
         console.error('Error al registrar el Service Worker:', err)
