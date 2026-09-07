@@ -1,6 +1,7 @@
 import { Component, lazy, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
+import { hidratarAlmacen } from './lib/storage.js'
 
 const App = lazy(() => import('./App.jsx'))
 
@@ -40,6 +41,7 @@ class ErrorBoundary extends Component {
 }
 
 async function boot() {
+  await hidratarAlmacen()
   try {
     createRoot(document.getElementById('root')).render(
       <ErrorBoundary>

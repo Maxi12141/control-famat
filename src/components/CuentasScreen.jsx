@@ -22,7 +22,7 @@ function rekey(prev, from, to) {
 
 export default function CuentasScreen({ tick }) {
   const { verPrecios, esJefe } = usePanel()
-  const [filtro, setFiltro] = useState('deben')
+  const [filtro, setFiltro] = useState('todos')
   const [abierto, setAbierto] = useState('')
   const [montos, setMontos] = useState({})
   const [datos, setDatos] = useState({})
@@ -136,7 +136,7 @@ export default function CuentasScreen({ tick }) {
           <p className="vacio">
             {filtro === 'deben'
               ? 'Nadie debe por ahora. Cuando alguien se lleve fiado, aparece acá con nombre y teléfono. Si no lo cargaron en Facturación, lo podés completar acá.'
-              : 'Todavía no hay fiados anotados. Se cargan en Facturación o desde el pedido.'}
+              : 'Todavía no hay fiados anotados. Abrí el mismo Control Famat de siempre (el programa .exe, no el navegador). Si los tenías en otra computadora, en Ajustes tocá Traer respaldo.'}
           </p>
         </article>
       ) : (

@@ -16,6 +16,8 @@ import {
 } from './components/icons.jsx'
 import { guardarEmpresa, leerEmpresa } from './lib/comprobantes.js'
 import { etiquetaRol, guardarNombre, guardarPinJefe, hayPinJefe, iniciales, leerNombre } from './lib/auth.js'
+import { recuperarDesdeArchivos } from './lib/recuperarCarpeta.js'
+import { aplicarSnapshot, descargarRespaldo, importarRespaldoArchivo, resumenAlmacen } from './lib/storage.js'
 import {
   asignarCodigo,
   borrarProducto,
@@ -1789,6 +1791,15 @@ function AjustesView({ role, nombre, onNombre, onSalir }) {
   const [ok, setOk] = useState('')
   const [error, setError] = useState('')
   const [empresa, setEmpresa] = useState(() => leerEmpresa())
+  const [escritorio, setEscritorio] = useState(null)
+  const [buscando, setBuscando] = useState(false)
+  const datos = resumenAlmacen()
+
+  useEffect(() => {
+    const api = window.famatEscritorio
+    if (!api?.info) return
+    api.info().then(setEscritorio).catch(() => {})
+  }, [])
 
   return (
     <>
@@ -1845,6 +1856,116 @@ function AjustesView({ role, nombre, onNombre, onSalir }) {
         )}
         {ok ? <p className="ok-msg">{ok}</p> : null}
         {error ? <p className="gate__error">{error}</p> : null}
+        <hr />
+        <p>Qué hay guardado en ESTA computadora</p>
+        <p className="vacio">
+          Importes: {datos.ventas} venta{datos.ventas === 1 ? '' : 's'} · Pérdidas: {datos.perdidas} · Fiados: {datos.fiados} · Precios propios: {datos.precios}
+        </p>
+        <p className="vacio">
+          Los precios de Productos pueden seguir apareciendo aunque se hayan perdido las cargas del día a día: esa lista viene con el programa. Fiados, importes y pérdidas se guardan solo en la PC que abrió el Control Famat, no en el archivo del pendrive.
+        </p>
+        {escritorio?.carpeta ? (
+          <p className="vacio">Carpeta de datos: {escritorio.carpeta}</p>
+        ) : (
+          <p className="vacio">
+            Si ya copiaste la carpeta al lado del .exe, dejala ahí. Abajo elegí esa carpeta para recuperarla.
+          </p>
+        )}
+        {window.famatEscritorio ? (
+          <>
+            <button
+              type="button"
+              className="dash-btn dash-btn--navy"
+              onClick={async () => {
+                try {
+                  await window.famatEscritorio.abrirCarpeta()
+                  setOk('Se abrió la carpeta de datos. Copiala al pendrive para no perderla.')
+                } catch {
+                  setError('No se pudo abrir la carpeta.')
+                }
+              }}
+            >
+              Abrir carpeta de datos
+            </button>
+            <button
+              type="button"
+              className="dash-btn dash-btn--navy"
+              disabled={buscando}
+              onClick={async () => {
+                setBuscando(true)
+                setError('')
+                try {
+                  const encontrados = await window.famatEscritorio.buscar()
+                  const n = aplicarSnapshot(encontrados, { soloVacios: true, fusionar: true })
+                  if (n) {
+                    setOk(`Se recuperaron ${n} datos de esta PC. Recargá el programa.`)
+                    window.setTimeout(() => location.reload(), 700)
+                  } else {
+                    setOk('No apareció otro respaldo en esta PC. Revisá la carpeta de AppData y el pendrive.')
+                  }
+                } catch {
+                  setError('No se pudo buscar en esta computadora.')
+                } finally {
+                  setBuscando(false)
+                }
+              }}
+            >
+              {buscando ? 'Buscando…' : 'Buscar datos viejos en esta PC'}
+            </button>
+          </>
+        ) : null}
+        <button type="button" className="dash-btn dash-btn--navy" onClick={() => { descargarRespaldo(); setOk('Se descargó el respaldo. Guardalo en un pendrive.') }}>
+          Descargar respaldo
+        </button>
+        <label>
+          Elegir la carpeta que copiaste al lado del .exe
+          <input
+            type="file"
+            webkitdirectory=""
+            directory=""
+            multiple
+            onChange={async (e) => {
+              const files = e.target.files
+              e.target.value = ''
+              if (!files?.length) return
+              setBuscando(true)
+              setError('')
+              try {
+                const { n, claves } = await recuperarDesdeArchivos(files)
+                if (n) {
+                  setOk(`Se recuperaron ${n} datos (${claves.join(', ')}). Recargá el programa.`)
+                  window.setTimeout(() => location.reload(), 700)
+                } else {
+                  setOk('Esa carpeta se leyó, pero no aparecieron fiados, importes ni pérdidas adentro.')
+                }
+              } catch {
+                setError('No se pudo leer esa carpeta.')
+              } finally {
+                setBuscando(false)
+              }
+            }}
+          />
+        </label>
+        <label>
+          Traer respaldo
+          <input
+            type="file"
+            accept="application/json,.json"
+            onChange={async (e) => {
+              const file = e.target.files?.[0]
+              e.target.value = ''
+              if (!file) return
+              try {
+                const n = await importarRespaldoArchivo(file)
+                setOk(`Se recuperaron ${n} datos. Recargá el programa.`)
+                setError('')
+                window.setTimeout(() => location.reload(), 600)
+              } catch {
+                setError('Ese archivo no se pudo leer.')
+              }
+            }}
+          />
+        </label>
         <hr />
         <button type="button" className="dash-btn dash-btn--salir" onClick={onSalir}>Cerrar sesión</button>
       </article>
