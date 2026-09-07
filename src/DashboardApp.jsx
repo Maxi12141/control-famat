@@ -1885,7 +1885,7 @@ function AjustesView({ role, nombre, onNombre, onSalir }) {
           Importes: {datos.ventas} venta{datos.ventas === 1 ? '' : 's'} · Pérdidas: {datos.perdidas} · Fiados: {datos.fiados} · Precios propios: {datos.precios}
         </p>
         <p className="vacio">
-          Los precios de Productos pueden seguir apareciendo aunque se hayan perdido las cargas del día a día: esa lista viene con el programa. Fiados, importes y pérdidas se guardan solo en la PC que abrió el Control Famat, no en el archivo del pendrive.
+          Códigos, importes, pérdidas y fiados se guardan también en internet. Si actualizás el programa, al abrir de nuevo se vuelven a traer.
         </p>
         {escritorio?.carpeta ? (
           <p className="vacio">Carpeta de datos: {escritorio.carpeta}</p>

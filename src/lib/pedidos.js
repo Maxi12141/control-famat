@@ -1,6 +1,6 @@
 import { slugify } from './format.js'
 import { buscarProductoPorNombre, listarProductos } from './catalog.js'
-import { CLIENTE_CATALOGO, headersSupabase, SUPABASE_URL } from './supabase.js'
+import { CLIENTE_CATALOGO, CLIENTE_CONTROL, headersSupabase, SUPABASE_URL } from './supabase.js'
 import { leerJSON } from './storage.js'
 
 const KEYS_LOCAL = ['famat_pedidos', 'famat_pendientes']
@@ -12,7 +12,13 @@ export const ESTADOS_PEDIDO = [
 ]
 
 export function esPedidoCatalogo(pedido) {
-  return pedido.cliente === CLIENTE_CATALOGO || pedido.estado === 'catalogo' || pedido.notas === 'catalogo-famat'
+  return (
+    pedido.cliente === CLIENTE_CATALOGO
+    || pedido.cliente === CLIENTE_CONTROL
+    || pedido.estado === 'catalogo'
+    || pedido.notas === 'catalogo-famat'
+    || pedido.notas === 'control-famat-respaldo'
+  )
 }
 
 function asArray(valor) {
@@ -62,7 +68,7 @@ function actualizarEstadoLocal(id, estado) {
 
 async function fetchPedidosRemotos() {
   try {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/pedidos?cliente=neq.${CLIENTE_CATALOGO}&select=*&order=id.desc`, {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/pedidos?cliente=neq.${CLIENTE_CATALOGO}&cliente=neq.${CLIENTE_CONTROL}&select=*&order=id.desc`, {
       headers: headersSupabase(),
     })
     if (!res.ok) return []

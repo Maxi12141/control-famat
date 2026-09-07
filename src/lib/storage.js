@@ -1,5 +1,8 @@
+import { CLAVES_CONTROL, guardarRespaldoControl, leerRespaldoControl } from './supabase.js'
+
 const IDB_NAME = 'famat-datos'
 const IDB_STORE = 'kv'
+const KEY_REMOTO_CONTROL = 'famat_control_remoto_id'
 
 function vacio(raw) {
   if (raw == null || raw === '' || raw === 'null' || raw === 'undefined') return true
@@ -148,6 +151,8 @@ async function guardarIdb(data) {
 }
 
 let timerRespaldo = 0
+let timerNube = 0
+
 function programarRespaldo() {
   window.clearTimeout(timerRespaldo)
   timerRespaldo = window.setTimeout(() => {
@@ -155,9 +160,72 @@ function programarRespaldo() {
   }, 250)
 }
 
+function snapshotControl() {
+  const out = {}
+  for (const clave of CLAVES_CONTROL) {
+    try {
+      const raw = localStorage.getItem(clave)
+      if (raw) out[clave] = JSON.parse(raw)
+    } catch {
+      /* ignore */
+    }
+  }
+  return out
+}
+
+function productosDesdeLocal() {
+  const snap = snapshotControl()
+  return CLAVES_CONTROL.map((clave) => ({ clave, datos: snap[clave] ?? null }))
+}
+
+async function subirNube() {
+  try {
+    const remotoId = localStorage.getItem(KEY_REMOTO_CONTROL) || ''
+    const id = await guardarRespaldoControl(remotoId, productosDesdeLocal())
+    if (id) localStorage.setItem(KEY_REMOTO_CONTROL, id)
+  } catch {
+    /* ignore */
+  }
+}
+
+function programarNube() {
+  window.clearTimeout(timerNube)
+  timerNube = window.setTimeout(() => {
+    subirNube()
+  }, 800)
+}
+
+function snapshotDesdeProductos(productos) {
+  const out = {}
+  if (!Array.isArray(productos)) return out
+  for (const item of productos) {
+    const clave = String(item?.clave || '')
+    if (!CLAVES_CONTROL.includes(clave) || item?.datos == null) continue
+    out[clave] = typeof item.datos === 'string' ? item.datos : JSON.stringify(item.datos)
+  }
+  return out
+}
+
+async function hidratarNube() {
+  try {
+    const row = await leerRespaldoControl()
+    if (!row) {
+      programarNube()
+      return 0
+    }
+    if (row.id != null) localStorage.setItem(KEY_REMOTO_CONTROL, String(row.id))
+    const n = aplicarSnapshot(snapshotDesdeProductos(row.productos), { soloVacios: true, fusionar: true })
+    programarNube()
+    return n
+  } catch {
+    return 0
+  }
+}
+
 export async function hidratarAlmacen() {
   const idb = await leerIdb()
-  const n = aplicarSnapshot(idb, { soloVacios: true, fusionar: true })
+  aplicarSnapshot(idb, { soloVacios: true, fusionar: true })
+  const n = await hidratarNube()
   programarRespaldo()
   return { restaurado: n }
 }
@@ -174,6 +242,7 @@ export function leerJSON(key, fallback) {
 export function guardarJSON(key, value) {
   localStorage.setItem(key, JSON.stringify(value))
   programarRespaldo()
+  if (CLAVES_CONTROL.includes(key)) programarNube()
 }
 
 export function resumenAlmacen() {
@@ -211,5 +280,6 @@ export async function importarRespaldoArchivo(file) {
   const datos = parsed?.datos && typeof parsed.datos === 'object' ? parsed.datos : parsed
   const n = aplicarSnapshot(datos, { soloVacios: false, fusionar: false })
   await guardarIdb(snapshotFamat())
+  programarNube()
   return n
 }
