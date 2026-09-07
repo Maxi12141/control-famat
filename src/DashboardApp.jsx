@@ -1801,6 +1801,29 @@ function AjustesView({ role, nombre, onNombre, onSalir }) {
     api.info().then(setEscritorio).catch(() => {})
   }, [])
 
+  const onRecuperarArchivos = async (e) => {
+    const files = e.target.files
+    e.target.value = ''
+    if (!files?.length) return
+    setBuscando(true)
+    setError('')
+    try {
+      const { n, claves, archivos } = await recuperarDesdeArchivos(files)
+      if (n) {
+        setOk(`Se recuperaron ${n} datos (${claves.join(', ')}). Recargá el programa.`)
+        window.setTimeout(() => location.reload(), 700)
+      } else if (!archivos) {
+        setOk('No se pudieron leer archivos. Entrá a la carpeta copiada, abrí Local Storage, después leveldb, y elegí esos archivos.')
+      } else {
+        setOk(`Se leyeron ${archivos} archivos, pero adentro no estaban los fiados ni los importes. Probá la carpeta "leveldb" (dentro de Local Storage).`)
+      }
+    } catch {
+      setError('No se pudo leer esa carpeta.')
+    } finally {
+      setBuscando(false)
+    }
+  }
+
   return (
     <>
       <h1>Ajustes</h1>
@@ -1924,26 +1947,15 @@ function AjustesView({ role, nombre, onNombre, onSalir }) {
             webkitdirectory=""
             directory=""
             multiple
-            onChange={async (e) => {
-              const files = e.target.files
-              e.target.value = ''
-              if (!files?.length) return
-              setBuscando(true)
-              setError('')
-              try {
-                const { n, claves } = await recuperarDesdeArchivos(files)
-                if (n) {
-                  setOk(`Se recuperaron ${n} datos (${claves.join(', ')}). Recargá el programa.`)
-                  window.setTimeout(() => location.reload(), 700)
-                } else {
-                  setOk('Esa carpeta se leyó, pero no aparecieron fiados, importes ni pérdidas adentro.')
-                }
-              } catch {
-                setError('No se pudo leer esa carpeta.')
-              } finally {
-                setBuscando(false)
-              }
-            }}
+            onChange={onRecuperarArchivos}
+          />
+        </label>
+        <label>
+          O elegí los archivos de adentro de Local Storage / leveldb
+          <input
+            type="file"
+            multiple
+            onChange={onRecuperarArchivos}
           />
         </label>
         <label>
