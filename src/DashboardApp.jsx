@@ -103,7 +103,7 @@ const TABS = [
   { id: 'stock', label: 'Stock', icon: IconStock },
 ]
 
-const NAV_SOLO_JEFE = new Set(['importes', 'perdidas'])
+const NAV_SOLO_JEFE = new Set()
 const NAV_MORE = NAV.filter((item) => ['productos', 'cuentas', 'importes', 'perdidas', 'ajustes'].includes(item.id))
 
 const FILTROS_TIPO = [
@@ -567,6 +567,7 @@ function ProductoPrecioCard({
   mostrarFoto = false,
   mostrarBorrar = false,
   verPrecios = true,
+  editarPrecios = false,
   onCodigo,
   onBlurPrecio,
   onKeyPrecio,
@@ -599,17 +600,21 @@ function ProductoPrecioCard({
       <div className="prod-card__precios">
         <label>
           Precio inicial
-          <input
-            className="precio-input"
-            type="number"
-            min="0"
-            inputMode="decimal"
-            data-precio={`${index}-venta`}
-            defaultValue={precio.venta || ''}
-            onBlur={(e) => onBlurPrecio(item.slug, 'venta', e.target.value)}
-            onKeyDown={(e) => onKeyPrecio(e, index, 'venta', item.slug)}
-            key={`${item.slug}-venta-${tablaKey}`}
-          />
+          {editarPrecios ? (
+            <input
+              className="precio-input"
+              type="number"
+              min="0"
+              inputMode="decimal"
+              data-precio={`${index}-venta`}
+              defaultValue={precio.venta || ''}
+              onBlur={(e) => onBlurPrecio(item.slug, 'venta', e.target.value)}
+              onKeyDown={(e) => onKeyPrecio(e, index, 'venta', item.slug)}
+              key={`${item.slug}-venta-${tablaKey}`}
+            />
+          ) : (
+            <span className="precio-input precio-input--read">{precio.venta ? dinero(precio.venta) : '—'}</span>
+          )}
         </label>
         <label>
           %
@@ -620,17 +625,21 @@ function ProductoPrecioCard({
         </label>
         <label className="precio-publico">
           Precio público
-          <input
-            className="precio-input"
-            type="number"
-            min="0"
-            inputMode="decimal"
-            data-precio={`${index}-cobro`}
-            defaultValue={precio.costo || ''}
-            onBlur={(e) => onBlurPrecio(item.slug, 'cobro', e.target.value)}
-            onKeyDown={(e) => onKeyPrecio(e, index, 'cobro', item.slug)}
-            key={`${item.slug}-cobro-${tablaKey}`}
-          />
+          {editarPrecios ? (
+            <input
+              className="precio-input"
+              type="number"
+              min="0"
+              inputMode="decimal"
+              data-precio={`${index}-cobro`}
+              defaultValue={precio.costo || ''}
+              onBlur={(e) => onBlurPrecio(item.slug, 'cobro', e.target.value)}
+              onKeyDown={(e) => onKeyPrecio(e, index, 'cobro', item.slug)}
+              key={`${item.slug}-cobro-${tablaKey}`}
+            />
+          ) : (
+            <span className="precio-input precio-input--read">{precio.costo ? dinero(precio.costo) : '—'}</span>
+          )}
         </label>
         <label>
           Escuelas
@@ -644,7 +653,7 @@ function ProductoPrecioCard({
 }
 
 function ProductosView({ productos, onCambio }) {
-  const { esJefe, verPrecios } = usePanel()
+  const { verPrecios, editarPrecios } = usePanel()
   const [panel, setPanel] = useState(null)
   const [tipo, setTipo] = useState('producto')
   const [linea, setLinea] = useState('')
@@ -842,6 +851,7 @@ function ProductosView({ productos, onCambio }) {
             onBorrar={() => borrar(item)}
             cargando={cargando}
             verPrecios={verPrecios}
+            editarPrecios={editarPrecios}
           />
         )
       })}
@@ -879,7 +889,7 @@ function ProductosView({ productos, onCambio }) {
               </select>
             </label>
             <label>O nueva línea<input value={lineaNueva} onChange={(e) => setLineaNueva(e.target.value)} placeholder="Si no está en la lista" /></label>
-            {verPrecios ? (
+            {editarPrecios ? (
               <>
                 <label>Precio inicial<input type="number" min="0" value={venta} onChange={(e) => setVenta(e.target.value)} /></label>
                 <label className="precio-publico">
@@ -888,7 +898,9 @@ function ProductosView({ productos, onCambio }) {
                   <small>Escuelas queda {PCT_ESCUELA}% más, no hace falta cargarlo.</small>
                 </label>
               </>
-            ) : null}
+            ) : (
+              <p className="vacio">Los precios los carga el jefe después.</p>
+            )}
             <label>Imagen<input type="file" accept="image/*" onChange={(e) => leerFoto(e.target.files?.[0])} /></label>
           </div>
           {foto ? <img className="form-alta__preview" src={foto} alt="" /> : null}
@@ -901,7 +913,7 @@ function ProductosView({ productos, onCambio }) {
   }
 
   if (panel === 'precios') {
-    if (!esJefe) {
+    if (!editarPrecios) {
       return (
         <>
           <h1>Carga rápida de precios</h1>
@@ -1071,9 +1083,9 @@ function ProductosView({ productos, onCambio }) {
         <button type="button" className="prod-tile" onClick={() => setPanel('alta')}>
           <span className="prod-tile__kicker">Alta</span>
           <strong>Cargar producto</strong>
-          <p>Nombre, código, tipo, línea{verPrecios ? ', precios' : ''} e imagen.</p>
+          <p>Nombre, código, tipo, línea{editarPrecios ? ', precios' : ''} e imagen.</p>
         </button>
-        {esJefe ? (
+        {editarPrecios ? (
           <button type="button" className="prod-tile" onClick={() => setPanel('precios')}>
             <span className="prod-tile__kicker">Precios</span>
             <strong>Carga rápida de precios</strong>
@@ -1128,7 +1140,7 @@ function precioPorLitroDe(slug, lista) {
 }
 
 function FactureroView({ productos, onGuardar }) {
-  const { verPrecios } = usePanel()
+  const { verPrecios, editarPrecios } = usePanel()
   const [nombre, setNombre] = useState('')
   const [apellido, setApellido] = useState('')
   const [direccion, setDireccion] = useState('')
@@ -1356,7 +1368,7 @@ function FactureroView({ productos, onGuardar }) {
                       onKeyDown={(e) => {
                         if (e.key !== 'Enter') return
                         e.preventDefault()
-                        if (verPrecios) document.querySelector(`[data-fact-p="${fila.id}"]`)?.focus()
+                        if (editarPrecios) document.querySelector(`[data-fact-p="${fila.id}"]`)?.focus()
                         else pasarANuevaFila(fila.id)
                       }}
                     />
@@ -1364,7 +1376,7 @@ function FactureroView({ productos, onGuardar }) {
                   {verPrecios ? (
                     <>
                       <td data-label="Precio" className="fact-planilla__precio">
-                        {fila.slug && verPrecios ? (
+                        {fila.slug && editarPrecios ? (
                           <input
                             className="fact-planilla__num"
                             type="number"
@@ -2040,7 +2052,8 @@ export default function DashboardApp({ role, onSalir }) {
   const rolLabel = etiquetaRol(role)
   const displayName = nombre.trim() || (role === 'jefe' ? 'Juan Fernández' : 'Empleado')
   const esJefe = role === 'jefe'
-  const verPrecios = esJefe
+  const verPrecios = true
+  const editarPrecios = esJefe
   const navAll = NAV.filter((item) => esJefe || !NAV_SOLO_JEFE.has(item.id))
   const navMore = NAV_MORE.filter((item) => esJefe || !NAV_SOLO_JEFE.has(item.id))
   const refresh = () => setTick((n) => n + 1)
@@ -2066,7 +2079,7 @@ export default function DashboardApp({ role, onSalir }) {
   }, [avisoAlerta])
 
   return (
-    <PanelContext.Provider value={{ role, verPrecios, esJefe }}>
+    <PanelContext.Provider value={{ role, verPrecios, editarPrecios, esJefe }}>
     <div className={`dash ${menu ? 'is-menu' : ''}`}>
       <button type="button" className="dash-overlay" aria-label="Cerrar menú" hidden={!menu} onClick={() => setMenu(false)} />
       <aside className="dash-side" id="dash-drawer">

@@ -2,7 +2,8 @@ import { createContext, useContext } from 'react'
 
 export const PanelContext = createContext({
   role: 'empleado',
-  verPrecios: false,
+  verPrecios: true,
+  editarPrecios: false,
   esJefe: false,
 })
 

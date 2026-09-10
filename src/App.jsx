@@ -105,7 +105,7 @@ function RoleGate({ onElegir }) {
           <button type="button" className="gate__rol gate__rol--empleado" onClick={() => onElegir('empleado')}>
             <span className="gate__rol-kicker">Sin PIN</span>
             <strong>Empleado</strong>
-            <span>Entrar al panel para stock, pedidos y el día a día</span>
+            <span>Entrar al panel para facturar, stock, pedidos y el día a día. No cambia los precios.</span>
           </button>
         </div>
       </div>

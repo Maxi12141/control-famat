@@ -21,7 +21,7 @@ function rekey(prev, from, to) {
 }
 
 export default function CuentasScreen({ tick }) {
-  const { verPrecios, esJefe } = usePanel()
+  const { verPrecios } = usePanel()
   const [filtro, setFiltro] = useState('todos')
   const [abierto, setAbierto] = useState('')
   const [montos, setMontos] = useState({})
@@ -208,27 +208,25 @@ export default function CuentasScreen({ tick }) {
                   ) : (
                     <p className="vacio">Falta un teléfono válido para avisarle lo que debe.</p>
                   )}
-                  {esJefe ? (
-                    <>
-                      <label className="cuenta-entrega">
-                        Entregó ahora
-                        <input
-                          type="number"
-                          min="0"
-                          step="1"
-                          value={texto}
-                          placeholder="0"
-                          onChange={(e) => setMontos((prev) => ({ ...prev, [key]: e.target.value }))}
-                        />
-                      </label>
-                      {verPrecios ? (
-                        <p className="cuenta-resta">Queda {dinero(queda)}</p>
-                      ) : null}
-                      <button type="button" className="dash-btn dash-btn--navy" onClick={() => cobrar(row)}>
-                        Anotar cobro
-                      </button>
-                    </>
-                  ) : null}
+                  <>
+                    <label className="cuenta-entrega">
+                      Entregó ahora
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={texto}
+                        placeholder="0"
+                        onChange={(e) => setMontos((prev) => ({ ...prev, [key]: e.target.value }))}
+                      />
+                    </label>
+                    {verPrecios ? (
+                      <p className="cuenta-resta">Queda {dinero(queda)}</p>
+                    ) : null}
+                    <button type="button" className="dash-btn dash-btn--navy" onClick={() => cobrar(row)}>
+                      Anotar cobro
+                    </button>
+                  </>
                 </div>
               ) : null}
               {abiertoEsta ? (
