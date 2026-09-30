@@ -1,6 +1,6 @@
 import { CATALOGO_LINEAS } from '../data/catalogSeed.js'
 import { nombreLinea, slugify } from './format.js'
-import { CLIENTE_CATALOGO, ESTADO_CATALOGO, fetchPedidos } from './supabase.js'
+import { CLIENTE_CATALOGO, SUPABASE_ANON_KEY, SUPABASE_URL, fetchPedidos } from './supabase.js'
 import { guardarJSON, leerJSON } from './storage.js'
 
 const KEY_EXTRAS = 'famat_extras'
@@ -125,6 +125,75 @@ function guardarFoto(slug, dataUrl) {
   guardarJSON(KEY_FOTOS, fotos)
 }
 
+const BUCKET_FOTOS = 'productos'
+
+function dataUrlABlob(dataUrl) {
+  const coma = String(dataUrl || '').indexOf(',')
+  if (coma < 0) throw new Error('No se pudo leer la imagen.')
+  const bin = atob(dataUrl.slice(coma + 1))
+  const bytes = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i)
+  return new Blob([bytes], { type: 'image/jpeg' })
+}
+
+function urlFotoPublica(slug, version) {
+  return `${SUPABASE_URL}/storage/v1/object/public/${BUCKET_FOTOS}/${encodeURIComponent(slug)}.jpg?v=${version}`
+}
+
+async function subirFotoStorage(slug, dataUrl) {
+  const version = Date.now()
+  const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET_FOTOS}/${encodeURIComponent(slug)}.jpg`, {
+    method: 'POST',
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      'Content-Type': 'image/jpeg',
+      'x-upsert': 'true',
+      'cache-control': '3600',
+    },
+    body: dataUrlABlob(dataUrl),
+  })
+  if (!res.ok) throw new Error('No se pudo subir la imagen a la web de pedidos.')
+  const url = urlFotoPublica(slug, version)
+  guardarFoto(slug, url)
+  return url
+}
+
+async function borrarFotoStorage(slug) {
+  await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET_FOTOS}/${encodeURIComponent(slug)}.jpg`, {
+    method: 'DELETE',
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    },
+  })
+  const fotos = leerFotos()
+  delete fotos[slug]
+  guardarJSON(KEY_FOTOS, fotos)
+}
+
+export function fotoEsPersonalizada(slug) {
+  return Boolean(leerFotos()[slug])
+}
+
+function fotosDesdeRemoto(extras, granel) {
+  const fotos = {}
+  for (const extra of extras) {
+    if (extra?.slug && extra.foto) fotos[extra.slug] = extra.foto
+  }
+  for (const item of Array.isArray(granel) ? granel : []) {
+    if (!item || item.tipo !== 'foto' || !item.slug || !item.foto) continue
+    fotos[item.slug] = item.foto
+  }
+  return fotos
+}
+
+function fotosParaPublicar() {
+  return Object.entries(leerFotos())
+    .filter(([, url]) => typeof url === 'string' && url)
+    .map(([slug, foto]) => ({ slug, foto, tipo: 'foto' }))
+}
+
 function estaOculto(slug) {
   return leerOcultos().includes(slug)
 }
@@ -157,22 +226,18 @@ function extrasParaPublicar() {
   return leerExtras().map((item) => ({ ...item, foto: item.foto || fotos[item.slug] || '' }))
 }
 
-function aplicarCatalogoRemoto(extras, ocultos, id) {
+function aplicarCatalogoRemoto(extras, ocultos, id, granel) {
   guardarExtras(extras)
   guardarOcultos(ocultos)
   if (id != null) localStorage.setItem(KEY_REMOTO, String(id))
-  const fotos = leerFotos()
-  for (const extra of extras) {
-    if (extra.foto) fotos[extra.slug] = extra.foto
-  }
-  guardarJSON(KEY_FOTOS, fotos)
+  guardarJSON(KEY_FOTOS, fotosDesdeRemoto(extras, granel))
   aplicarExtrasAlCatalogo()
 }
 
 export async function hidratarCatalogoRemoto() {
   try {
     const res = await fetchPedidos(
-      `?cliente=eq.${CLIENTE_CATALOGO}&select=id,productos,liquidos,estado&order=id.desc&limit=1`,
+      `?cliente=eq.${CLIENTE_CATALOGO}&select=id,productos,liquidos,granel,estado&order=id.desc&limit=1`,
     )
     if (!res.ok) return
     const data = await res.json()
@@ -189,6 +254,7 @@ export async function hidratarCatalogoRemoto() {
             .filter(Boolean)
         : [],
       remoto.id,
+      remoto.granel,
     )
   } catch {
     aplicarExtrasAlCatalogo()
@@ -201,15 +267,28 @@ async function publicarCatalogo() {
     telefono: '',
     productos: extrasParaPublicar(),
     liquidos: leerOcultos().map((slug) => ({ nombre: slug, tipo: 'oculto' })),
-    granel: [],
+    granel: fotosParaPublicar(),
     fecha_entrega: '',
     metodo_pago: '',
     notas: 'catalogo-famat',
-    estado: ESTADO_CATALOGO,
+    estado: 'entregado',
     fecha_creacion: new Date().toISOString(),
   }
 
-  const remotoId = localStorage.getItem(KEY_REMOTO)
+  let remotoId = ''
+  try {
+    const actual = await fetchPedidos(
+      `?cliente=eq.${CLIENTE_CATALOGO}&select=id&order=id.desc&limit=1`,
+    )
+    if (actual.ok) {
+      const filas = await actual.json()
+      if (Array.isArray(filas) && filas[0]?.id != null) remotoId = String(filas[0].id)
+    }
+  } catch {
+    remotoId = ''
+  }
+  if (!remotoId) remotoId = localStorage.getItem(KEY_REMOTO) || ''
+  if (remotoId) localStorage.setItem(KEY_REMOTO, remotoId)
   if (remotoId) {
     const patch = await fetchPedidos(`?id=eq.${encodeURIComponent(remotoId)}`, {
       method: 'PATCH',
@@ -219,18 +298,11 @@ async function publicarCatalogo() {
     if (patch.ok) return
   }
 
-  let res = await fetchPedidos('', {
+  const res = await fetchPedidos('', {
     method: 'POST',
     headers: { Prefer: 'return=representation' },
     body: JSON.stringify(payload),
   })
-  if (!res.ok) {
-    res = await fetchPedidos('', {
-      method: 'POST',
-      headers: { Prefer: 'return=representation' },
-      body: JSON.stringify({ ...payload, estado: 'entregado' }),
-    })
-  }
   if (!res.ok) throw new Error('No se pudo publicar el catálogo en la web de pedidos.')
   const data = await res.json()
   const row = Array.isArray(data) ? data[0] : data
@@ -269,23 +341,41 @@ export async function crearProducto({ nombre, tipo, linea, lineaNueva, foto }) {
   const lineaFinal = (lineaNueva || linea).trim()
   if (!lineaFinal) throw new Error('Elegí o creá una línea.')
   const slug = slugify(nombreLimpio)
-  const extra = { nombre: nombreLimpio, slug, linea: lineaFinal, tipo, foto }
+  const fotoUrl = foto ? await subirFotoStorage(slug, foto) : ''
+  const extra = { nombre: nombreLimpio, slug, linea: lineaFinal, tipo, foto: fotoUrl }
   const extras = leerExtras().filter((item) => item.slug !== slug)
   extras.push(extra)
   guardarExtras(extras)
   guardarOcultos(leerOcultos().filter((item) => item !== slug))
-  if (foto) guardarFoto(slug, foto)
   aplicarExtrasAlCatalogo()
   await publicarCatalogo()
   return extra
 }
 
+export async function cambiarFotoProducto(slug, foto) {
+  const clave = String(slug || '').trim()
+  if (!clave) throw new Error('Elegí un producto.')
+  if (!foto) throw new Error('Elegí una imagen.')
+  const url = await subirFotoStorage(clave, foto)
+  guardarExtras(leerExtras().map((item) => (item.slug === clave ? { ...item, foto: url } : item)))
+  aplicarExtrasAlCatalogo()
+  await publicarCatalogo()
+  return url
+}
+
+export async function quitarFotoProducto(slug) {
+  const clave = String(slug || '').trim()
+  if (!clave) throw new Error('Elegí un producto.')
+  await borrarFotoStorage(clave)
+  guardarExtras(leerExtras().map((item) => (item.slug === clave ? { ...item, foto: '' } : item)))
+  aplicarExtrasAlCatalogo()
+  await publicarCatalogo()
+}
+
 export async function borrarProducto(slug) {
   const eraExtra = leerExtras().some((item) => item.slug === slug)
   guardarExtras(leerExtras().filter((item) => item.slug !== slug))
-  const fotos = leerFotos()
-  delete fotos[slug]
-  guardarJSON(KEY_FOTOS, fotos)
+  await borrarFotoStorage(slug)
   guardarOcultos(eraExtra ? leerOcultos().filter((item) => item !== slug) : [...leerOcultos(), slug])
   aplicarExtrasAlCatalogo()
   await publicarCatalogo()

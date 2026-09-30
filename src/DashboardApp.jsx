@@ -22,10 +22,13 @@ import {
   asignarCodigo,
   borrarProducto,
   buscarProductos,
+  cambiarFotoProducto,
   comprimirImagen,
   crearProducto,
+  fotoEsPersonalizada,
   fotoProductoFallback,
   hidratarCatalogoRemoto,
+  quitarFotoProducto,
   listarLineas,
   listarProductos,
 } from './lib/catalog.js'
@@ -572,6 +575,7 @@ function ProductoPrecioCard({
   onBlurPrecio,
   onKeyPrecio,
   onBorrar,
+  onCambiarFoto,
   cargando,
 }) {
   return (
@@ -590,10 +594,19 @@ function ProductoPrecioCard({
           <strong>{item.nombre}</strong>
           <p>{etiquetaTipo(item.tipo)} · {item.linea}</p>
         </div>
-        {mostrarBorrar ? (
-          <button type="button" className="prod-table__borrar" onClick={onBorrar} disabled={cargando}>
-            Borrar
-          </button>
+        {mostrarBorrar || onCambiarFoto ? (
+          <div className="prod-card__acciones">
+            {onCambiarFoto ? (
+              <button type="button" className="prod-card__imagen" onClick={onCambiarFoto} disabled={cargando}>
+                Imagen
+              </button>
+            ) : null}
+            {mostrarBorrar ? (
+              <button type="button" className="prod-table__borrar" onClick={onBorrar} disabled={cargando}>
+                Borrar
+              </button>
+            ) : null}
+          </div>
         ) : null}
       </div>
       {verPrecios ? (
@@ -663,6 +676,8 @@ function ProductosView({ productos, onCambio }) {
   const [venta, setVenta] = useState('')
   const [cobro, setCobro] = useState('')
   const [foto, setFoto] = useState('')
+  const [fotoSlug, setFotoSlug] = useState('')
+  const [fotoBusqueda, setFotoBusqueda] = useState('')
   const [error, setError] = useState('')
   const [ok, setOk] = useState('')
   const [cargando, setCargando] = useState(false)
@@ -679,6 +694,18 @@ function ProductosView({ productos, onCambio }) {
 
   const volver = () => {
     setPanel(null)
+    setError('')
+    setOk('')
+    setFoto('')
+    setFotoSlug('')
+    setFotoBusqueda('')
+  }
+
+  const abrirCambioFoto = (slug = '') => {
+    setPanel('foto')
+    setFoto('')
+    setFotoSlug(slug)
+    setFotoBusqueda('')
     setError('')
     setOk('')
   }
@@ -719,6 +746,51 @@ function ProductosView({ productos, onCambio }) {
       onCambio()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo cargar.')
+    } finally {
+      setCargando(false)
+    }
+  }
+
+  const cambiarImagen = async () => {
+    setError('')
+    setOk('')
+    if (!fotoSlug) {
+      setError('Elegí un producto.')
+      return
+    }
+    if (!foto) {
+      setError('Elegí la imagen nueva.')
+      return
+    }
+    setCargando(true)
+    try {
+      await cambiarFotoProducto(fotoSlug, foto)
+      setFoto('')
+      setOk('Imagen actualizada. Los clientes la ven en la web de pedidos.')
+      onCambio()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo cambiar la imagen.')
+    } finally {
+      setCargando(false)
+    }
+  }
+
+  const quitarImagen = async () => {
+    if (!fotoSlug) {
+      setError('Elegí un producto.')
+      return
+    }
+    if (!window.confirm('¿Sacar la imagen propia y volver a la foto original de la web de pedidos?')) return
+    setError('')
+    setOk('')
+    setCargando(true)
+    try {
+      await quitarFotoProducto(fotoSlug)
+      setFoto('')
+      setOk('Volvió la imagen original en la web de pedidos.')
+      onCambio()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo quitar la imagen.')
     } finally {
       setCargando(false)
     }
@@ -849,6 +921,7 @@ function ProductosView({ productos, onCambio }) {
             onBlurPrecio={blurPrecio}
             onKeyPrecio={onKeyPrecio}
             onBorrar={() => borrar(item)}
+            onCambiarFoto={opts.mostrarFoto ? () => abrirCambioFoto(item.slug) : null}
             cargando={cargando}
             verPrecios={verPrecios}
             editarPrecios={editarPrecios}
@@ -863,7 +936,7 @@ function ProductosView({ productos, onCambio }) {
     return (
       <>
         <h1>Cargar producto</h1>
-        <p className="dash-sub">Alta de un producto nuevo en el catálogo.</p>
+        <p className="dash-sub">El producto y la imagen se publican en la web de pedidos.</p>
         <button type="button" className="prod-back" onClick={volver}>← Volver a productos</button>
         {error ? <p className="gate__error">{error}</p> : null}
         {ok ? <p className="ok-msg">{ok}</p> : null}
@@ -907,6 +980,66 @@ function ProductosView({ productos, onCambio }) {
           <button type="button" className="dash-btn dash-btn--navy" onClick={alta} disabled={cargando}>
             {cargando ? 'Publicando…' : 'Cargar'}
           </button>
+        </article>
+      </>
+    )
+  }
+
+  if (panel === 'foto') {
+    const elegido = productos.find((item) => item.slug === fotoSlug) || null
+    const qFoto = fotoBusqueda.trim()
+    const hitsFoto = qFoto ? buscarProductos(qFoto, productos).slice(0, 8) : []
+    const vista = foto || elegido?.foto || ''
+    return (
+      <>
+        <h1>Cambiar imagen</h1>
+        <p className="dash-sub">Reemplazá o quitá la foto de un producto que ya existe. El cambio se ve en la web de pedidos.</p>
+        <button type="button" className="prod-back" onClick={volver}>← Volver a productos</button>
+        {error ? <p className="gate__error">{error}</p> : null}
+        {ok ? <p className="ok-msg">{ok}</p> : null}
+        <article className="panel form-alta">
+          <label>
+            Buscar producto
+            <input
+              value={fotoBusqueda}
+              onChange={(e) => setFotoBusqueda(e.target.value)}
+              placeholder="Nombre o código"
+            />
+          </label>
+          {hitsFoto.length ? (
+            <div className="foto-elegir">
+              {hitsFoto.map((item) => (
+                <button
+                  key={item.slug}
+                  type="button"
+                  className={item.slug === fotoSlug ? 'is-on' : ''}
+                  onClick={() => { setFotoSlug(item.slug); setFoto(''); setOk(''); setError('') }}
+                >
+                  <img src={item.foto} alt="" onError={(e) => onFotoError(e, item.slug)} />
+                  <span><strong>{item.codigo}</strong> {item.nombre}</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="vacio">{qFoto ? 'No hay un producto con eso.' : 'Escribí el nombre o el código.'}</p>
+          )}
+          {elegido ? (
+            <div className="foto-actual">
+              <p><strong>{elegido.codigo}</strong> · {elegido.nombre}</p>
+              {vista ? <img className="form-alta__preview form-alta__preview--lg" src={vista} alt="" onError={(e) => onFotoError(e, elegido.slug)} /> : null}
+              <label>Imagen nueva<input type="file" accept="image/*" onChange={(e) => leerFoto(e.target.files?.[0])} /></label>
+              <div className="foto-actual__acciones">
+                <button type="button" className="dash-btn dash-btn--navy" onClick={cambiarImagen} disabled={cargando}>
+                  {cargando ? 'Publicando…' : 'Guardar imagen'}
+                </button>
+                {fotoEsPersonalizada(elegido.slug) ? (
+                  <button type="button" className="prod-table__borrar" onClick={quitarImagen} disabled={cargando}>
+                    Quitar imagen
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
         </article>
       </>
     )
@@ -1083,7 +1216,12 @@ function ProductosView({ productos, onCambio }) {
         <button type="button" className="prod-tile" onClick={() => setPanel('alta')}>
           <span className="prod-tile__kicker">Alta</span>
           <strong>Cargar producto</strong>
-          <p>Nombre, código, tipo, línea{editarPrecios ? ', precios' : ''} e imagen.</p>
+          <p>Nombre, código, tipo, línea{editarPrecios ? ', precios' : ''} e imagen. Se publica en pedidos.</p>
+        </button>
+        <button type="button" className="prod-tile" onClick={() => abrirCambioFoto()}>
+          <span className="prod-tile__kicker">Foto</span>
+          <strong>Cambiar imagen</strong>
+          <p>Reemplazá o quitá la foto de un producto que ya existe. Se ve en la web de pedidos.</p>
         </button>
         {editarPrecios ? (
           <button type="button" className="prod-tile" onClick={() => setPanel('precios')}>
