@@ -4,27 +4,30 @@
   "description": "Controlador Famat — sistema de gestión de pedidos y catálogo",
   "lang": "es",
   "dir": "ltr",
+  "id": "/",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "prefer_related_applications": false,
   "orientation": "portrait",
   "background_color": "#0891b2",
   "theme_color": "#0891b2",
   "icons": [
     {
-      "src": "higia-192.png",
+      "src": "/higia-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "higia-512.png",
+      "src": "/higia-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "apple-touch-icon.png",
+      "src": "/apple-touch-icon.png",
       "sizes": "180x180",
       "type": "image/png",
       "purpose": "any"

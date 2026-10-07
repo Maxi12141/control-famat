@@ -1,4 +1,5 @@
 import { lazy, Suspense, useState } from 'react'
+import DescargarApp from './components/DescargarApp.jsx'
 import {
   borrarRol,
   guardarPinJefe,
@@ -108,6 +109,7 @@ function RoleGate({ onElegir }) {
             <span>Entrar al panel para facturar, stock, pedidos y el día a día. No cambia los precios.</span>
           </button>
         </div>
+        <DescargarApp />
       </div>
     </div>
   )

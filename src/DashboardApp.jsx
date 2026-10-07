@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import ComprobanteScreen from './components/ComprobanteScreen.jsx'
+import DescargarApp from './components/DescargarApp.jsx'
 import CuentasScreen from './components/CuentasScreen.jsx'
 import {
   IconClose,
@@ -2348,6 +2349,7 @@ export default function DashboardApp({ role, onSalir }) {
             </div>
           </div>
           <div className="dash-top__actions">
+            <DescargarApp compacto />
             <div className="alerta-wrap">
               <button
                 type="button"

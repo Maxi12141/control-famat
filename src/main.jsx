@@ -1,6 +1,7 @@
 import { Component, lazy, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
+import { prepararInstalacion } from './lib/instalar.js'
 import { hidratarAlmacen } from './lib/storage.js'
 
 const App = lazy(() => import('./App.jsx'))
@@ -40,7 +41,41 @@ class ErrorBoundary extends Component {
   }
 }
 
+function registrarAppInstalable() {
+  if (!('serviceWorker' in navigator) || navigator.userAgent.includes('Electron')) return
+  prepararInstalacion()
+  let yaHabia = Boolean(navigator.serviceWorker.controller)
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!yaHabia) {
+      yaHabia = true
+      return
+    }
+    window.dispatchEvent(new CustomEvent('famat-cambios-nuevos', { detail: 'app' }))
+  })
+  const registrar = () => {
+    navigator.serviceWorker.register('/sw.js', { scope: '/' }).then((reg) => {
+      const avisar = () => {
+        if (reg.waiting && navigator.serviceWorker.controller) {
+          window.dispatchEvent(new CustomEvent('famat-cambios-nuevos', { detail: 'app' }))
+        }
+      }
+      reg.addEventListener('updatefound', () => {
+        reg.installing?.addEventListener('statechange', avisar)
+      })
+      avisar()
+      window.setInterval(() => {
+        reg.update().catch(() => {})
+      }, 60000)
+    }).catch((err) => {
+      console.error('Error al registrar el Service Worker:', err)
+    })
+  }
+  if (document.readyState === 'complete') registrar()
+  else window.addEventListener('load', registrar)
+}
+
 async function boot() {
+  registrarAppInstalable()
   await hidratarAlmacen()
   try {
     createRoot(document.getElementById('root')).render(
@@ -63,34 +98,6 @@ async function boot() {
     `
   }
 
-  if ('serviceWorker' in navigator && !navigator.userAgent.includes('Electron')) {
-    let yaHabia = Boolean(navigator.serviceWorker.controller)
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (!yaHabia) {
-        yaHabia = true
-        return
-      }
-      window.dispatchEvent(new CustomEvent('famat-cambios-nuevos', { detail: 'app' }))
-    })
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js').then((reg) => {
-        const avisar = () => {
-          if (reg.waiting && navigator.serviceWorker.controller) {
-            window.dispatchEvent(new CustomEvent('famat-cambios-nuevos', { detail: 'app' }))
-          }
-        }
-        reg.addEventListener('updatefound', () => {
-          reg.installing?.addEventListener('statechange', avisar)
-        })
-        avisar()
-        window.setInterval(() => {
-          reg.update().catch(() => {})
-        }, 60000)
-      }).catch((err) => {
-        console.error('Error al registrar el Service Worker:', err)
-      })
-    })
-  }
 }
 
 boot()
