@@ -1,4 +1,4 @@
-const CACHE_NAME = "famat-pedidos-react-v2";
+const CACHE_NAME = "famat-pedidos-react-v3";
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -16,6 +16,10 @@ self.addEventListener("install", (event) => {
     caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL))
   );
   self.skipWaiting();
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data === "actualizar") self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
@@ -64,8 +68,13 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Network-first para JS/CSS/HTML del catálogo (versión nueva).
-  if (NETWORK_FIRST_FILES.some((path) => url.pathname.endsWith(path))) {
+  // La app nueva tiene que entrar sin quedar pegada a un JS viejo.
+  if (
+    NETWORK_FIRST_FILES.some((path) => url.pathname.endsWith(path))
+    || url.pathname.startsWith("/assets/")
+    || url.pathname.endsWith(".js")
+    || url.pathname.endsWith(".css")
+  ) {
     event.respondWith(
       fetch(request)
         .then((response) => {

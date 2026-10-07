@@ -64,8 +64,29 @@ async function boot() {
   }
 
   if ('serviceWorker' in navigator && !navigator.userAgent.includes('Electron')) {
+    let yaHabia = Boolean(navigator.serviceWorker.controller)
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!yaHabia) {
+        yaHabia = true
+        return
+      }
+      window.dispatchEvent(new CustomEvent('famat-cambios-nuevos', { detail: 'app' }))
+    })
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js').catch((err) => {
+      navigator.serviceWorker.register('/sw.js').then((reg) => {
+        const avisar = () => {
+          if (reg.waiting && navigator.serviceWorker.controller) {
+            window.dispatchEvent(new CustomEvent('famat-cambios-nuevos', { detail: 'app' }))
+          }
+        }
+        reg.addEventListener('updatefound', () => {
+          reg.installing?.addEventListener('statechange', avisar)
+        })
+        avisar()
+        window.setInterval(() => {
+          reg.update().catch(() => {})
+        }, 60000)
+      }).catch((err) => {
         console.error('Error al registrar el Service Worker:', err)
       })
     })

@@ -1,3 +1,4 @@
+import { programarPrecios } from './nube.js'
 import { guardarJSON, leerJSON } from './storage.js'
 import { PRECIOS_SEED } from '../data/preciosSeed.js'
 
@@ -85,6 +86,7 @@ export function aplicarPorcentajeACobro(slugs, porcentaje) {
     n += 1
   }
   guardarJSON(KEY, data)
+  programarPrecios()
   return n
 }
 
@@ -96,6 +98,7 @@ export function guardarPrecio(slug, venta, costo) {
     costo: costo == null ? actual.costo : Math.max(0, Number(costo) || 0),
   }
   guardarJSON(KEY, data)
+  programarPrecios()
   return precioDe(slug)
 }
 
@@ -109,6 +112,7 @@ export function guardarPreciosLote(filas) {
     }
   }
   guardarJSON(KEY, data)
+  programarPrecios()
 }
 
 export function aumentarPrecios(slugs, porcentaje) {
@@ -122,6 +126,7 @@ export function aumentarPrecios(slugs, porcentaje) {
     }
   }
   guardarJSON(KEY, data)
+  programarPrecios()
 }
 
 export function parsearCodigos(texto) {

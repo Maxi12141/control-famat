@@ -1,6 +1,7 @@
 import { fechaCorta, hoyISO, nombreMes } from './format.js'
 import { cantidadItem, itemsPedido, productoDeItemPedido, telefonoWa } from './pedidos.js'
 import { precioCobroDe } from './precios.js'
+import { publicarFiados } from './nube.js'
 import { guardarJSON, leerJSON } from './storage.js'
 
 const KEY = 'famat_cuentas'
@@ -12,6 +13,7 @@ function leerMovimientos() {
 
 function guardarMovimientos(lista) {
   guardarJSON(KEY, lista)
+  publicarFiados(lista)
   return lista
 }
 

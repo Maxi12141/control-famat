@@ -226,6 +226,12 @@ export async function hidratarAlmacen() {
   const idb = await leerIdb()
   aplicarSnapshot(idb, { soloVacios: true, fusionar: true })
   const n = await hidratarNube()
+  try {
+    const { hidratarTablas } = await import('./nube.js')
+    await hidratarTablas()
+  } catch {
+    /* sin red siguen los datos del aparato */
+  }
   programarRespaldo()
   return { restaurado: n }
 }

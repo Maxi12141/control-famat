@@ -30,9 +30,24 @@ function guardarExtras(extras) {
   guardarJSON(KEY_EXTRAS, extras)
 }
 
+function urlFotoValida(foto) {
+  return typeof foto === 'string' && /^https?:\/\//.test(foto)
+}
+
 function leerFotos() {
   const fotos = leerJSON(KEY_FOTOS, {})
   return fotos && typeof fotos === 'object' && !Array.isArray(fotos) ? fotos : {}
+}
+
+function compactarFotosLocales() {
+  const fotos = leerFotos()
+  let cambio = false
+  for (const slug of Object.keys(fotos)) {
+    if (urlFotoValida(fotos[slug])) continue
+    delete fotos[slug]
+    cambio = true
+  }
+  if (cambio) guardarJSON(KEY_FOTOS, fotos)
 }
 
 function leerOcultos() {
@@ -140,19 +155,32 @@ function urlFotoPublica(slug, version) {
   return `${SUPABASE_URL}/storage/v1/object/public/${BUCKET_FOTOS}/${encodeURIComponent(slug)}.jpg?v=${version}`
 }
 
+function conLimite(ms, trabajo) {
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), ms)
+  return Promise.resolve(trabajo(controller.signal)).finally(() => window.clearTimeout(timer))
+}
+
 async function subirFotoStorage(slug, dataUrl) {
   const version = Date.now()
-  const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET_FOTOS}/${encodeURIComponent(slug)}.jpg`, {
-    method: 'POST',
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-      'Content-Type': 'image/jpeg',
-      'x-upsert': 'true',
-      'cache-control': '3600',
-    },
-    body: dataUrlABlob(dataUrl),
-  })
+  let res
+  try {
+    res = await conLimite(20000, (signal) => fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET_FOTOS}/${encodeURIComponent(slug)}.jpg`, {
+      method: 'POST',
+      signal,
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'image/jpeg',
+        'x-upsert': 'true',
+        'cache-control': '60',
+      },
+      body: dataUrlABlob(dataUrl),
+    }))
+  } catch (err) {
+    if (err?.name === 'AbortError') throw new Error('La imagen tardó demasiado. Podés seguir con otra, sin salir.')
+    throw err
+  }
   if (!res.ok) throw new Error('No se pudo subir la imagen a la web de pedidos.')
   const url = urlFotoPublica(slug, version)
   guardarFoto(slug, url)
@@ -160,13 +188,19 @@ async function subirFotoStorage(slug, dataUrl) {
 }
 
 async function borrarFotoStorage(slug) {
-  await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET_FOTOS}/${encodeURIComponent(slug)}.jpg`, {
-    method: 'DELETE',
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-    },
-  })
+  try {
+    await conLimite(12000, (signal) => fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET_FOTOS}/${encodeURIComponent(slug)}.jpg`, {
+      method: 'DELETE',
+      signal,
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+    }))
+  } catch (err) {
+    if (err?.name === 'AbortError') throw new Error('Tardó demasiado en quitar la imagen. Podés seguir, sin salir.')
+    throw err
+  }
   const fotos = leerFotos()
   delete fotos[slug]
   guardarJSON(KEY_FOTOS, fotos)
@@ -179,10 +213,10 @@ export function fotoEsPersonalizada(slug) {
 function fotosDesdeRemoto(extras, granel) {
   const fotos = {}
   for (const extra of extras) {
-    if (extra?.slug && extra.foto) fotos[extra.slug] = extra.foto
+    if (extra?.slug && urlFotoValida(extra.foto)) fotos[extra.slug] = extra.foto
   }
   for (const item of Array.isArray(granel) ? granel : []) {
-    if (!item || item.tipo !== 'foto' || !item.slug || !item.foto) continue
+    if (!item || item.tipo !== 'foto' || !item.slug || !urlFotoValida(item.foto)) continue
     fotos[item.slug] = item.foto
   }
   return fotos
@@ -190,7 +224,7 @@ function fotosDesdeRemoto(extras, granel) {
 
 function fotosParaPublicar() {
   return Object.entries(leerFotos())
-    .filter(([, url]) => typeof url === 'string' && url)
+    .filter(([, url]) => urlFotoValida(url))
     .map(([slug, foto]) => ({ slug, foto, tipo: 'foto' }))
 }
 
@@ -234,7 +268,25 @@ function aplicarCatalogoRemoto(extras, ocultos, id, granel) {
   aplicarExtrasAlCatalogo()
 }
 
+let marcaPropia = ''
+
+export async function marcaCatalogoRemoto() {
+  const res = await fetchPedidos(
+    `?cliente=eq.${CLIENTE_CATALOGO}&select=id,fecha_creacion&order=id.desc&limit=1`,
+  )
+  if (!res.ok) return ''
+  const data = await res.json()
+  const row = Array.isArray(data) ? data[0] : null
+  if (!row?.id) return ''
+  return `${row.id}|${row.fecha_creacion || ''}`
+}
+
+export function marcaCatalogoLocal() {
+  return marcaPropia
+}
+
 export async function hidratarCatalogoRemoto() {
+  compactarFotosLocales()
   try {
     const res = await fetchPedidos(
       `?cliente=eq.${CLIENTE_CATALOGO}&select=id,productos,liquidos,granel,estado&order=id.desc&limit=1`,
@@ -261,18 +313,34 @@ export async function hidratarCatalogoRemoto() {
   }
 }
 
+let colaCatalogo = Promise.resolve()
+
+function encolarCatalogo(trabajo) {
+  const tarea = colaCatalogo.catch(() => {}).then(trabajo)
+  colaCatalogo = tarea.then(() => {}, () => {})
+  return tarea
+}
+
 async function publicarCatalogo() {
+  return encolarCatalogo(() => publicarCatalogoAhora())
+}
+
+async function publicarCatalogoAhora() {
+  const fecha = new Date().toISOString()
   const payload = {
     cliente: CLIENTE_CATALOGO,
     telefono: '',
-    productos: extrasParaPublicar(),
+    productos: extrasParaPublicar().map((item) => ({
+      ...item,
+      foto: urlFotoValida(item.foto) ? item.foto : '',
+    })),
     liquidos: leerOcultos().map((slug) => ({ nombre: slug, tipo: 'oculto' })),
     granel: fotosParaPublicar(),
     fecha_entrega: '',
     metodo_pago: '',
     notas: 'catalogo-famat',
     estado: 'entregado',
-    fecha_creacion: new Date().toISOString(),
+    fecha_creacion: fecha,
   }
 
   let remotoId = ''
@@ -287,33 +355,54 @@ async function publicarCatalogo() {
   } catch {
     remotoId = ''
   }
-  if (!remotoId) remotoId = localStorage.getItem(KEY_REMOTO) || ''
-  if (remotoId) localStorage.setItem(KEY_REMOTO, remotoId)
-  if (remotoId) {
-    const patch = await fetchPedidos(`?id=eq.${encodeURIComponent(remotoId)}`, {
-      method: 'PATCH',
-      headers: { Prefer: 'return=minimal' },
+  try {
+    if (!remotoId) remotoId = localStorage.getItem(KEY_REMOTO) || ''
+    if (remotoId) localStorage.setItem(KEY_REMOTO, remotoId)
+    if (remotoId) {
+      const patch = await fetchPedidos(`?id=eq.${encodeURIComponent(remotoId)}`, {
+        method: 'PATCH',
+        headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify(payload),
+      })
+      if (patch.ok) {
+        marcaPropia = `${remotoId}|${fecha}`
+        window.dispatchEvent(new CustomEvent('famat-cambios-nuevos'))
+        return
+      }
+    }
+
+    const res = await fetchPedidos('', {
+      method: 'POST',
+      headers: { Prefer: 'return=representation' },
       body: JSON.stringify(payload),
     })
-    if (patch.ok) return
+    if (!res.ok) throw new Error('No se pudo publicar el catálogo en la web de pedidos.')
+    const data = await res.json()
+    const row = Array.isArray(data) ? data[0] : data
+    if (row?.id != null) {
+      localStorage.setItem(KEY_REMOTO, String(row.id))
+      marcaPropia = `${row.id}|${fecha}`
+      window.dispatchEvent(new CustomEvent('famat-cambios-nuevos'))
+    }
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      throw new Error('La publicación tardó demasiado. Podés seguir con otra imagen, sin salir.')
+    }
+    throw err
   }
-
-  const res = await fetchPedidos('', {
-    method: 'POST',
-    headers: { Prefer: 'return=representation' },
-    body: JSON.stringify(payload),
-  })
-  if (!res.ok) throw new Error('No se pudo publicar el catálogo en la web de pedidos.')
-  const data = await res.json()
-  const row = Array.isArray(data) ? data[0] : data
-  if (row?.id != null) localStorage.setItem(KEY_REMOTO, String(row.id))
 }
 
 export async function comprimirImagen(file) {
   return new Promise((resolve, reject) => {
     const image = new Image()
     const url = URL.createObjectURL(file)
+    const timer = window.setTimeout(() => {
+      URL.revokeObjectURL(url)
+      reject(new Error('La imagen tardó demasiado. Elegí otra, sin salir.'))
+    }, 12000)
+    const listo = () => window.clearTimeout(timer)
     image.onload = () => {
+      listo()
       const scale = Math.min(1, 480 / Math.max(image.width, image.height))
       const canvas = document.createElement('canvas')
       canvas.width = Math.max(1, Math.round(image.width * scale))
@@ -328,6 +417,7 @@ export async function comprimirImagen(file) {
       resolve(canvas.toDataURL('image/jpeg', 0.68))
     }
     image.onerror = () => {
+      listo()
       URL.revokeObjectURL(url)
       reject(new Error('No se pudo leer la imagen.'))
     }

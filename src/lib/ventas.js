@@ -1,5 +1,7 @@
 import { hoyISO } from './format.js'
 import { itemsPedido, cantidadItem, esPedidoCatalogo, productoDeItemPedido } from './pedidos.js'
+import { listarProductos } from './catalog.js'
+import { publicarImportes, publicarPerdidas } from './nube.js'
 import { precioCobroDe, precioDe } from './precios.js'
 import { ajustarStock } from './stock.js'
 import { guardarJSON, leerJSON } from './storage.js'
@@ -37,6 +39,7 @@ function registrarVenta(venta) {
     total,
   }
   guardarJSON(KEY_VENTAS, [row, ...leerVentas()])
+  publicarImportes(row)
   return row
 }
 
@@ -59,6 +62,7 @@ export function registrarReposicion(item) {
     proveedor: item.proveedor,
   }
   guardarJSON(KEY_PERDIDAS, [row, ...leerPerdidas()])
+  publicarPerdidas(row)
   ajustarStock(item.slug, item.cantidad)
   return row
 }
@@ -152,7 +156,10 @@ export function actualizarImportesPedido(pedidoId, items) {
     cambio = true
     return { ...venta, items: filas, total }
   })
-  if (cambio) guardarJSON(KEY_VENTAS, next)
+  if (cambio) {
+    guardarJSON(KEY_VENTAS, next)
+    publicarImportes(next.filter((venta) => String(venta.pedidoId) === String(pedidoId)))
+  }
   return cambio
 }
 
@@ -166,7 +173,13 @@ export function marcarVentaPagada({ pedidoId, cliente, fecha }) {
     cambio = true
     return { ...venta, pagado: true, fecha: fecha || hoyISO() }
   })
-  if (cambio) guardarJSON(KEY_VENTAS, next)
+  if (cambio) {
+    guardarJSON(KEY_VENTAS, next)
+    publicarImportes(next.filter((venta) => venta.pagado !== false && (
+      (pedidoId != null && pedidoId !== '' && String(venta.pedidoId) === String(pedidoId))
+      || (cliente && String(venta.cliente || '').trim() === String(cliente).trim())
+    )))
+  }
   return cambio
 }
 
@@ -182,13 +195,16 @@ export function aplicarPedidosAlStock(pedidos) {
   for (const pedido of pedidos) {
     const id = String(pedido.id)
     if (aplicados.has(id) || esPedidoCatalogo(pedido)) continue
+    const porSlug = new Map(listarProductos().map((prod) => [prod.slug, prod]))
     const items = itemsPedido(pedido)
       .map((item) => {
         const slug = productoDeItemPedido(item)
         const cantidad = cantidadItem(item)
+        const prod = porSlug.get(slug)
         return {
           slug,
           nombre: item.nombre,
+          codigo: prod?.codigo || '',
           cantidad: cantidad > 0 ? cantidad : 0,
           precio: precioCobroDe(slug),
           tipo: item.tipo,
@@ -196,7 +212,16 @@ export function aplicarPedidosAlStock(pedidos) {
       })
       .filter((item) => item.slug && item.cantidad > 0)
     if (items.length) {
-      registrarVenta({ fecha: hoyISO(), origen: 'web', cliente: pedido.cliente, telefono: pedido.telefono, pedidoId: pedido.id, pagado: false, items })
+      const quien = String(pedido.cliente || '').trim()
+      registrarVenta({
+        fecha: hoyISO(),
+        origen: 'web',
+        cliente: quien ? `pedido de ${quien}` : 'pedido',
+        telefono: pedido.telefono,
+        pedidoId: pedido.id,
+        pagado: false,
+        items,
+      })
       for (const item of items) ajustarStock(item.slug, -item.cantidad)
     }
     aplicados.add(id)

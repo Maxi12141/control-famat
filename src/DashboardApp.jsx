@@ -28,6 +28,8 @@ import {
   fotoEsPersonalizada,
   fotoProductoFallback,
   hidratarCatalogoRemoto,
+  marcaCatalogoLocal,
+  marcaCatalogoRemoto,
   quitarFotoProducto,
   listarLineas,
   listarProductos,
@@ -680,7 +682,7 @@ function ProductosView({ productos, onCambio }) {
   const [fotoBusqueda, setFotoBusqueda] = useState('')
   const [error, setError] = useState('')
   const [ok, setOk] = useState('')
-  const [cargando, setCargando] = useState(false)
+  const [ocupado, setOcupado] = useState('')
   const [busqueda, setBusqueda] = useState('')
   const [filtroTipo, setFiltroTipo] = useState('')
   const [filtroLinea, setFiltroLinea] = useState('')
@@ -699,6 +701,37 @@ function ProductosView({ productos, onCambio }) {
     setFoto('')
     setFotoSlug('')
     setFotoBusqueda('')
+    setOcupado('')
+  }
+
+  const correr = async (clave, trabajo) => {
+    setError('')
+    setOk('')
+    setOcupado(clave)
+    let cerrado = false
+    const soltar = () => {
+      if (cerrado) return
+      cerrado = true
+      setOcupado((actual) => (actual === clave ? '' : actual))
+    }
+    const limite = window.setTimeout(() => {
+      soltar()
+      setError('Tardó demasiado. Podés seguir con otro producto, sin salir.')
+    }, 24000)
+    try {
+      await trabajo(() => cerrado)
+    } catch (err) {
+      if (!cerrado) setError(err instanceof Error ? err.message : 'No se pudo completar.')
+    } finally {
+      window.clearTimeout(limite)
+      soltar()
+    }
+  }
+
+  const elegirArchivo = (event) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    leerFoto(file)
   }
 
   const abrirCambioFoto = (slug = '') => {
@@ -726,34 +759,24 @@ function ProductosView({ productos, onCambio }) {
     comprimirImagen(file).then(setFoto).catch(() => setError('No se pudo leer la imagen.'))
   }
 
-  const alta = async () => {
-    setError('')
-    setOk('')
-    setCargando(true)
-    try {
-      const creado = await crearProducto({ nombre, tipo, linea, lineaNueva, foto })
-      guardarPrecio(creado.slug, Number(venta) || 0, Number(cobro) || 0)
-      if (codigo.trim()) {
-        try { asignarCodigo(creado.slug, codigo) } catch { /* ignore */ }
-      }
-      setNombre('')
-      setCodigo('')
-      setVenta('')
-      setCobro('')
-      setFoto('')
-      setLineaNueva('')
-      setOk('Producto cargado.')
-      onCambio()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo cargar.')
-    } finally {
-      setCargando(false)
+  const alta = () => correr('alta', async (vencido) => {
+    const creado = await crearProducto({ nombre, tipo, linea, lineaNueva, foto })
+    if (vencido()) return
+    guardarPrecio(creado.slug, Number(venta) || 0, Number(cobro) || 0)
+    if (codigo.trim()) {
+      try { asignarCodigo(creado.slug, codigo) } catch { /* ignore */ }
     }
-  }
+    setNombre('')
+    setCodigo('')
+    setVenta('')
+    setCobro('')
+    setFoto('')
+    setLineaNueva('')
+    setOk('Producto cargado.')
+    onCambio()
+  })
 
-  const cambiarImagen = async () => {
-    setError('')
-    setOk('')
+  const cambiarImagen = () => {
     if (!fotoSlug) {
       setError('Elegí un producto.')
       return
@@ -762,52 +785,37 @@ function ProductosView({ productos, onCambio }) {
       setError('Elegí la imagen nueva.')
       return
     }
-    setCargando(true)
-    try {
+    return correr(fotoSlug, async (vencido) => {
       await cambiarFotoProducto(fotoSlug, foto)
+      if (vencido()) return
       setFoto('')
       setOk('Imagen actualizada. Los clientes la ven en la web de pedidos.')
       onCambio()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo cambiar la imagen.')
-    } finally {
-      setCargando(false)
-    }
+    })
   }
 
-  const quitarImagen = async () => {
+  const quitarImagen = () => {
     if (!fotoSlug) {
       setError('Elegí un producto.')
       return
     }
     if (!window.confirm('¿Sacar la imagen propia y volver a la foto original de la web de pedidos?')) return
-    setError('')
-    setOk('')
-    setCargando(true)
-    try {
+    return correr(fotoSlug, async (vencido) => {
       await quitarFotoProducto(fotoSlug)
+      if (vencido()) return
       setFoto('')
       setOk('Volvió la imagen original en la web de pedidos.')
       onCambio()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo quitar la imagen.')
-    } finally {
-      setCargando(false)
-    }
+    })
   }
 
-  const borrar = async (item) => {
+  const borrar = (item) => {
     if (!window.confirm(`¿Borrar "${item.nombre}" de la web de pedidos?`)) return
-    setError('')
-    setCargando(true)
-    try {
+    return correr(item.slug, async (vencido) => {
       await borrarProducto(item.slug)
+      if (vencido()) return
       onCambio()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo borrar.')
-    } finally {
-      setCargando(false)
-    }
+    })
   }
 
   const blurPrecio = (slug, campo, valor) => {
@@ -922,7 +930,7 @@ function ProductosView({ productos, onCambio }) {
             onKeyPrecio={onKeyPrecio}
             onBorrar={() => borrar(item)}
             onCambiarFoto={opts.mostrarFoto ? () => abrirCambioFoto(item.slug) : null}
-            cargando={cargando}
+            cargando={ocupado === item.slug}
             verPrecios={verPrecios}
             editarPrecios={editarPrecios}
           />
@@ -974,11 +982,11 @@ function ProductosView({ productos, onCambio }) {
             ) : (
               <p className="vacio">Los precios los carga el jefe después.</p>
             )}
-            <label>Imagen<input type="file" accept="image/*" onChange={(e) => leerFoto(e.target.files?.[0])} /></label>
+            <label>Imagen<input type="file" accept="image/*" onChange={elegirArchivo} /></label>
           </div>
           {foto ? <img className="form-alta__preview" src={foto} alt="" /> : null}
-          <button type="button" className="dash-btn dash-btn--navy" onClick={alta} disabled={cargando}>
-            {cargando ? 'Publicando…' : 'Cargar'}
+          <button type="button" className="dash-btn dash-btn--navy" onClick={alta} disabled={ocupado === 'alta'}>
+            {ocupado === 'alta' ? 'Publicando…' : 'Cargar'}
           </button>
         </article>
       </>
@@ -1027,13 +1035,13 @@ function ProductosView({ productos, onCambio }) {
             <div className="foto-actual">
               <p><strong>{elegido.codigo}</strong> · {elegido.nombre}</p>
               {vista ? <img className="form-alta__preview form-alta__preview--lg" src={vista} alt="" onError={(e) => onFotoError(e, elegido.slug)} /> : null}
-              <label>Imagen nueva<input type="file" accept="image/*" onChange={(e) => leerFoto(e.target.files?.[0])} /></label>
+              <label>Imagen nueva<input type="file" accept="image/*" onChange={elegirArchivo} /></label>
               <div className="foto-actual__acciones">
-                <button type="button" className="dash-btn dash-btn--navy" onClick={cambiarImagen} disabled={cargando}>
-                  {cargando ? 'Publicando…' : 'Guardar imagen'}
+                <button type="button" className="dash-btn dash-btn--navy" onClick={cambiarImagen} disabled={ocupado === elegido.slug}>
+                  {ocupado === elegido.slug ? 'Publicando…' : 'Guardar imagen'}
                 </button>
                 {fotoEsPersonalizada(elegido.slug) ? (
-                  <button type="button" className="prod-table__borrar" onClick={quitarImagen} disabled={cargando}>
+                  <button type="button" className="prod-table__borrar" onClick={quitarImagen} disabled={ocupado === elegido.slug}>
                     Quitar imagen
                   </button>
                 ) : null}
@@ -2143,6 +2151,10 @@ export default function DashboardApp({ role, onSalir }) {
   const [nombre, setNombre] = useState(() => leerNombre())
   const [menu, setMenu] = useState(false)
   const [avisoAlerta, setAvisoAlerta] = useState(false)
+  const [cambiosNuevos, setCambiosNuevos] = useState(false)
+  const [appNueva, setAppNueva] = useState(false)
+  const [actualizando, setActualizando] = useState(false)
+  const marcaVista = useRef('')
   const productos = useMemo(() => listarProductos(), [tick])
 
   useEffect(() => {
@@ -2165,6 +2177,64 @@ export default function DashboardApp({ role, onSalir }) {
       window.removeEventListener('focus', onFocus)
     }
   }, [])
+
+  useEffect(() => {
+    const onCambios = (event) => {
+      if (event?.detail === 'app') setAppNueva(true)
+      setCambiosNuevos(true)
+    }
+    window.addEventListener('famat-cambios-nuevos', onCambios)
+    let vivo = true
+    const mirar = async () => {
+      try {
+        const marca = await marcaCatalogoRemoto()
+        if (!vivo || !marca) return
+        if (!marcaVista.current) {
+          marcaVista.current = marca
+          return
+        }
+        if (marca !== marcaVista.current && marca !== marcaCatalogoLocal()) {
+          marcaVista.current = marca
+          setCambiosNuevos(true)
+        }
+      } catch {
+        /* sin red no molesta */
+      }
+    }
+    mirar()
+    const timer = window.setInterval(mirar, 20000)
+    return () => {
+      vivo = false
+      window.clearInterval(timer)
+      window.removeEventListener('famat-cambios-nuevos', onCambios)
+    }
+  }, [])
+
+  const actualizarCambios = async () => {
+    if (actualizando) return
+    setActualizando(true)
+    if (appNueva && 'serviceWorker' in navigator) {
+      try {
+        const reg = await navigator.serviceWorker.getRegistration()
+        reg?.waiting?.postMessage('actualizar')
+      } catch {
+        /* igual se recarga */
+      }
+      window.setTimeout(() => location.reload(), 400)
+      return
+    }
+    try {
+      await hidratarCatalogoRemoto()
+      const marca = await marcaCatalogoRemoto()
+      if (marca) marcaVista.current = marca
+      setTick((n) => n + 1)
+      setCambiosNuevos(false)
+    } catch {
+      location.reload()
+    } finally {
+      setActualizando(false)
+    }
+  }
 
   useEffect(() => {
     document.body.classList.toggle('dash-menu-open', menu)
@@ -2318,6 +2388,14 @@ export default function DashboardApp({ role, onSalir }) {
             </button>
           </div>
         </header>
+        {cambiosNuevos ? (
+          <div className="cambios-nuevos" role="status">
+            <span>Cambios nuevos</span>
+            <button type="button" onClick={actualizarCambios} disabled={actualizando}>
+              {actualizando ? 'actualizando…' : 'actualizar'}
+            </button>
+          </div>
+        ) : null}
         <div className="dash-body">
           <div className="dash-view" key={vista}>
             {vista === 'inicio' && (
