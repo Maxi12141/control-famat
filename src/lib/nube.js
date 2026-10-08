@@ -112,6 +112,18 @@ function perdidaRemota(row) {
   }
 }
 
+function mismaLista(local, remoto) {
+  const firma = (lista) => (Array.isArray(lista) ? lista : [])
+    .map((item) => {
+      if (!item || typeof item !== 'object') return JSON.stringify(item)
+      const { _m, ...resto } = item
+      return JSON.stringify(resto)
+    })
+    .sort()
+    .join('|')
+  return firma(local) === firma(remoto)
+}
+
 function mezclarPorId(local, remoto) {
   const map = new Map()
   for (const row of remoto) {
@@ -233,21 +245,21 @@ export async function hidratarTablas() {
       Array.isArray(ventasLocal) ? ventasLocal : [],
       importes.map(importeLocal),
     )
-    if (ventas.length) guardarJSON('famat_ventas', ventas)
+    if (ventas.length && !mismaLista(ventasLocal, ventas)) guardarJSON('famat_ventas', ventas)
 
     const fiadosLocal = leerJSON('famat_cuentas', [])
     const cuentas = mezclarPorId(
       Array.isArray(fiadosLocal) ? fiadosLocal : [],
       fiados.map(fiadoLocal),
     )
-    if (cuentas.length) guardarJSON('famat_cuentas', cuentas)
+    if (cuentas.length && !mismaLista(fiadosLocal, cuentas)) guardarJSON('famat_cuentas', cuentas)
 
     const perdidasLocal = leerJSON('famat_perdidas', [])
     const bajas = mezclarPorId(
       Array.isArray(perdidasLocal) ? perdidasLocal : [],
       perdidas.map(perdidaLocal),
     )
-    if (bajas.length) guardarJSON('famat_perdidas', bajas)
+    if (bajas.length && !mismaLista(perdidasLocal, bajas)) guardarJSON('famat_perdidas', bajas)
     const idsPerdidas = new Set(perdidas.map((row) => String(row.id)))
     publicarPerdidas(bajas.filter((row) => row?.id && !idsPerdidas.has(String(row.id))))
   } catch {

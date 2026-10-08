@@ -4,7 +4,16 @@ export const CLIENTE_CATALOGO = 'FAMAT_CATALOGO'
 export const CLIENTE_CONTROL = 'FAMAT_CONTROL'
 export const ESTADO_CATALOGO = 'catalogo'
 export const NOTAS_CONTROL = 'control-famat-respaldo'
-export const CLAVES_CONTROL = ['famat_codigos', 'famat_ventas', 'famat_perdidas', 'famat_cuentas']
+export const CLAVES_CONTROL = [
+  'famat_codigos',
+  'famat_precios',
+  'famat_stock',
+  'famat_stock_min',
+  'famat_ventas',
+  'famat_perdidas',
+  'famat_cuentas',
+  'famat_sync_marcas',
+]
 
 export function headersSupabase(extra = {}) {
   return {
@@ -32,16 +41,27 @@ export async function fetchPedidos(path, options = {}) {
   }
 }
 
+export async function marcaControlRemota() {
+  const res = await fetchPedidos(
+    `?cliente=eq.${CLIENTE_CONTROL}&select=id,fecha_creacion&order=id.desc&limit=1`,
+  )
+  if (!res.ok) return ''
+  const data = await res.json()
+  const row = Array.isArray(data) ? data[0] : null
+  if (!row?.id) return ''
+  return `${row.id}|${row.fecha_creacion || ''}`
+}
+
 export async function leerRespaldoControl() {
   const res = await fetchPedidos(
-    `?cliente=eq.${CLIENTE_CONTROL}&select=id,productos,notas&order=id.desc&limit=1`,
+    `?cliente=eq.${CLIENTE_CONTROL}&select=id,productos,notas,fecha_creacion&order=id.desc&limit=1`,
   )
   if (!res.ok) return null
   const data = await res.json()
   return Array.isArray(data) ? data[0] || null : null
 }
 
-export async function guardarRespaldoControl(remotoId, productos) {
+export async function guardarRespaldoControl(remotoId, productos, fecha = new Date().toISOString()) {
   const payload = {
     cliente: CLIENTE_CONTROL,
     telefono: '',
@@ -52,7 +72,7 @@ export async function guardarRespaldoControl(remotoId, productos) {
     metodo_pago: '',
     notas: NOTAS_CONTROL,
     estado: 'entregado',
-    fecha_creacion: new Date().toISOString(),
+    fecha_creacion: fecha,
   }
   if (remotoId) {
     const patch = await fetchPedidos(`?id=eq.${encodeURIComponent(remotoId)}`, {

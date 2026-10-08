@@ -1,4 +1,4 @@
-const CACHE_NAME = "famat-pedidos-react-v4";
+const CACHE_NAME = "famat-__FAMAT_BUILD__";
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -17,7 +17,6 @@ self.addEventListener("install", (event) => {
       Promise.all(APP_SHELL.map((url) => cache.add(url).catch(() => {})))
     )
   );
-  self.skipWaiting();
 });
 
 self.addEventListener("message", (event) => {
@@ -44,7 +43,7 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(request.url);
 
-  if (url.origin !== self.location.origin) {
+  if (url.origin !== self.location.origin || url.pathname.endsWith("/version.json")) {
     return;
   }
 

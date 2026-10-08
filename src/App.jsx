@@ -1,4 +1,5 @@
 import { lazy, Suspense, useState } from 'react'
+import AvisoCambios from './components/AvisoCambios.jsx'
 import DescargarApp from './components/DescargarApp.jsx'
 import {
   borrarRol,
@@ -134,6 +135,8 @@ export default function App() {
 
   if (pedirPin && rol !== 'jefe') {
     return (
+      <>
+      <AvisoCambios suelto />
       <PinGate
         onOk={() => {
           guardarRol('jefe')
@@ -142,6 +145,7 @@ export default function App() {
         }}
         onVolver={() => setPedirPin(false)}
       />
+      </>
     )
   }
 
@@ -161,6 +165,8 @@ export default function App() {
   }
 
   return (
+    <>
+    <AvisoCambios suelto />
     <RoleGate
       onElegir={(siguiente) => {
         if (siguiente === 'jefe') {
@@ -171,5 +177,6 @@ export default function App() {
         setRol(siguiente)
       }}
     />
+    </>
   )
 }

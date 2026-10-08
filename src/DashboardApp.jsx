@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import AvisoCambios from './components/AvisoCambios.jsx'
 import ComprobanteScreen from './components/ComprobanteScreen.jsx'
 import DescargarApp from './components/DescargarApp.jsx'
 import CuentasScreen from './components/CuentasScreen.jsx'
@@ -29,8 +30,6 @@ import {
   fotoEsPersonalizada,
   fotoProductoFallback,
   hidratarCatalogoRemoto,
-  marcaCatalogoLocal,
-  marcaCatalogoRemoto,
   quitarFotoProducto,
   listarLineas,
   listarProductos,
@@ -2152,11 +2151,13 @@ export default function DashboardApp({ role, onSalir }) {
   const [nombre, setNombre] = useState(() => leerNombre())
   const [menu, setMenu] = useState(false)
   const [avisoAlerta, setAvisoAlerta] = useState(false)
-  const [cambiosNuevos, setCambiosNuevos] = useState(false)
-  const [appNueva, setAppNueva] = useState(false)
-  const [actualizando, setActualizando] = useState(false)
-  const marcaVista = useRef('')
   const productos = useMemo(() => listarProductos(), [tick])
+
+  useEffect(() => {
+    const onDatos = () => setTick((n) => n + 1)
+    window.addEventListener('famat-datos-aplicados', onDatos)
+    return () => window.removeEventListener('famat-datos-aplicados', onDatos)
+  }, [])
 
   useEffect(() => {
     let alive = true
@@ -2178,64 +2179,6 @@ export default function DashboardApp({ role, onSalir }) {
       window.removeEventListener('focus', onFocus)
     }
   }, [])
-
-  useEffect(() => {
-    const onCambios = (event) => {
-      if (event?.detail === 'app') setAppNueva(true)
-      setCambiosNuevos(true)
-    }
-    window.addEventListener('famat-cambios-nuevos', onCambios)
-    let vivo = true
-    const mirar = async () => {
-      try {
-        const marca = await marcaCatalogoRemoto()
-        if (!vivo || !marca) return
-        if (!marcaVista.current) {
-          marcaVista.current = marca
-          return
-        }
-        if (marca !== marcaVista.current && marca !== marcaCatalogoLocal()) {
-          marcaVista.current = marca
-          setCambiosNuevos(true)
-        }
-      } catch {
-        /* sin red no molesta */
-      }
-    }
-    mirar()
-    const timer = window.setInterval(mirar, 20000)
-    return () => {
-      vivo = false
-      window.clearInterval(timer)
-      window.removeEventListener('famat-cambios-nuevos', onCambios)
-    }
-  }, [])
-
-  const actualizarCambios = async () => {
-    if (actualizando) return
-    setActualizando(true)
-    if (appNueva && 'serviceWorker' in navigator) {
-      try {
-        const reg = await navigator.serviceWorker.getRegistration()
-        reg?.waiting?.postMessage('actualizar')
-      } catch {
-        /* igual se recarga */
-      }
-      window.setTimeout(() => location.reload(), 400)
-      return
-    }
-    try {
-      await hidratarCatalogoRemoto()
-      const marca = await marcaCatalogoRemoto()
-      if (marca) marcaVista.current = marca
-      setTick((n) => n + 1)
-      setCambiosNuevos(false)
-    } catch {
-      location.reload()
-    } finally {
-      setActualizando(false)
-    }
-  }
 
   useEffect(() => {
     document.body.classList.toggle('dash-menu-open', menu)
@@ -2390,14 +2333,7 @@ export default function DashboardApp({ role, onSalir }) {
             </button>
           </div>
         </header>
-        {cambiosNuevos ? (
-          <div className="cambios-nuevos" role="status">
-            <span>Cambios nuevos</span>
-            <button type="button" onClick={actualizarCambios} disabled={actualizando}>
-              {actualizando ? 'actualizando…' : 'actualizar'}
-            </button>
-          </div>
-        ) : null}
+        <AvisoCambios onDatos={refresh} />
         <div className="dash-body">
           <div className="dash-view" key={vista}>
             {vista === 'inicio' && (

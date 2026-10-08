@@ -1227,6 +1227,10 @@ export const PRECIOS_SEED = {
     "venta": 2530,
     "costo": 3800
   },
+  "jabon-en-polvo-clorado": {
+    "venta": 3530,
+    "costo": 5400
+  },
   "soda-cautica-granulado": {
     "venta": 3265,
     "costo": 4900

@@ -55,9 +55,12 @@ function registrarAppInstalable() {
   const registrar = () => {
     navigator.serviceWorker.register('/sw.js', { scope: '/' }).then((reg) => {
       const avisar = () => {
-        if (reg.waiting && navigator.serviceWorker.controller) {
-          window.dispatchEvent(new CustomEvent('famat-cambios-nuevos', { detail: 'app' }))
+        if (!reg.waiting) return
+        if (!navigator.serviceWorker.controller) {
+          reg.waiting.postMessage('actualizar')
+          return
         }
+        window.dispatchEvent(new CustomEvent('famat-cambios-nuevos', { detail: 'app' }))
       }
       reg.addEventListener('updatefound', () => {
         reg.installing?.addEventListener('statechange', avisar)

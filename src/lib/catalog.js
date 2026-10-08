@@ -72,8 +72,8 @@ function leerCodigos() {
   return codigos && typeof codigos === 'object' ? codigos : {}
 }
 
-function guardarCodigos(codigos) {
-  guardarJSON(KEY_CODIGOS, codigos)
+function guardarCodigos(codigos, opts) {
+  guardarJSON(KEY_CODIGOS, codigos, opts)
 }
 
 function asegurarCodigos(productos) {
@@ -104,7 +104,7 @@ function asegurarCodigos(productos) {
     cambio = true
   }
 
-  if (cambio) guardarCodigos(codigos)
+  if (cambio) guardarCodigos(codigos, { sinNube: true })
   return codigos
 }
 
@@ -366,7 +366,6 @@ async function publicarCatalogoAhora() {
       })
       if (patch.ok) {
         marcaPropia = `${remotoId}|${fecha}`
-        window.dispatchEvent(new CustomEvent('famat-cambios-nuevos'))
         return
       }
     }
@@ -382,7 +381,6 @@ async function publicarCatalogoAhora() {
     if (row?.id != null) {
       localStorage.setItem(KEY_REMOTO, String(row.id))
       marcaPropia = `${row.id}|${fecha}`
-      window.dispatchEvent(new CustomEvent('famat-cambios-nuevos'))
     }
   } catch (err) {
     if (err?.name === 'AbortError') {
